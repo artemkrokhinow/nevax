@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nevax - Voice Calls Made Simple</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .nvx-root {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #050505 0%, #000000 30%, #050505 100%);
+            padding: 24px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            overflow: hidden;
+            transform: perspective(1000px) rotateX(0deg);
+            transform-style: preserve-3d;
+            box-shadow: 
+                0 0 50px rgba(0, 255, 0, 0.3),
+                inset 0 0 100px rgba(0, 255, 0, 0.05);
+        }
+
+        .nvx-window-controls {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: flex;
+            gap: 8px;
+            padding: 16px 24px 0 0;
+            z-index: 1000;
+        }
+
+        .nvx-drag-region {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
+        }
+
+        .nvx-drag-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 999;
+        }
+
+        .nvx-window-btn {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            clip-path: polygon(3% 0%, 97% 2%, 100% 87%, 87% 100%, 2% 98%, 0% 13%);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+            pointer-events: auto;
+        }
+
+        .nvx-window-btn:hover {
+            background: linear-gradient(135deg, #001a00 0%, #003300 50%, #001a00 100%);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
+        }
+
+        .nvx-window-btn.close {
+            border-color: #ff0000;
+            color: #ff0000;
+        }
+
+        .nvx-window-btn.close:hover {
+            background: linear-gradient(135deg, #1a0000 0%, #330000 50%, #1a0000 100%);
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.6);
+        }
+
+        .nvx-window-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 0, 0.02) 2px,
+                rgba(0, 255, 0, 0.02) 4px
+            );
+            pointer-events: none;
+        }
+
+        .nvx-window-btn.close::before {
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(255, 0, 0, 0.02) 2px,
+                rgba(255, 0, 0, 0.02) 4px
+            );
+        }
+
+        body {
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 800;
+            color: #00ff00;
+            position: relative;
+            background: linear-gradient(180deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.3),
+                rgba(0, 0, 0, 0.3) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 0%, rgba(0, 0, 0, 0.5) 90%, rgba(0, 0, 0, 0.8) 100%);
+            pointer-events: none;
+            z-index: 99;
+        }
+
+        .nvx-root {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #050505 0%, #000000 30%, #050505 100%);
+            padding: 24px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            overflow: hidden;
+            transform: perspective(1000px) rotateX(0deg);
+            transform-style: preserve-3d;
+            box-shadow: 
+                0 0 50px rgba(0, 255, 0, 0.3),
+                inset 0 0 100px rgba(0, 255, 0, 0.05);
+            pointer-events: none;
+        }
+
+        .nvx-root > * {
+            pointer-events: auto;
+        }
+
+        .nvx-root::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 255, 0, 0.01) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .nvx-root::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                90deg,
+                rgba(0, 255, 0, 0.005),
+                rgba(0, 255, 0, 0.005) 1px,
+                transparent 1px,
+                transparent 4px
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .nvx-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .nvx-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+            color: #00ff00;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.9), 0 0 60px rgba(0, 255, 0, 0.4), inset 0 0 25px rgba(0, 255, 0, 0.2);
+            flex-shrink: 0;
+            position: relative;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.8), 0 0 20px rgba(0, 255, 0, 0.5);
+            animation: glitch 3s infinite;
+        }
+
+        @keyframes glitch {
+            0%, 90%, 100% {
+                transform: translate(0);
+                text-shadow: 0 0 10px rgba(0, 255, 0, 0.8), 0 0 20px rgba(0, 255, 0, 0.5);
+            }
+            91% {
+                transform: translate(-2px, 1px);
+                text-shadow: 2px 0 #ff0000, -2px 0 #00ffff;
+            }
+            92% {
+                transform: translate(2px, -1px);
+                text-shadow: -2px 0 #ff0000, 2px 0 #00ffff;
+            }
+            93% {
+                transform: translate(-1px, 2px);
+            }
+            94% {
+                transform: translate(1px, -2px);
+            }
+        }
+
+        
+        .nvx-badge {
+            background: rgba(220,38,38,0.15);
+            border: 1px solid rgba(220,38,38,0.35);
+            color: #f87171;
+            font-size: 10px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 0 8px rgba(220,38,38,0.15);
+        }
+
+        .nvx-friend-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        
+        .nvx-friend-info {
+            flex: 1;
+        }
+
+        .nvx-friend-label {
+            font-size: 11px;
+            color: #00ff00;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            white-space: nowrap;
+            font-weight: 500;
+            margin: 0 0 2px;
+        }
+
+        .nvx-friend-val {
+            font-size: 17px;
+            font-weight: 500;
+            color: #00ff00;
+            margin: 0;
+            font-family: 'Syne', sans-serif;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        .nvx-settings-section {
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            border-radius: 0;
+            padding: 18px;
+            margin-bottom: 24px;
+            box-shadow: 
+                0 0 25px rgba(0, 255, 0, 0.4), 
+                inset 0 0 25px rgba(0, 255, 0, 0.15), 
+                0 8px 16px rgba(0, 0, 0, 0.6),
+                0 -4px 8px rgba(0, 255, 0, 0.3);
+            clip-path: polygon(1% 0%, 99% 2%, 100% 89%, 94% 100%, 2% 98%, 0% 11%);
+            position: relative;
+            transform: perspective(500px) rotateX(0deg);
+            transform-style: preserve-3d;
+        }
+
+        .nvx-settings-section::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 3px,
+                rgba(0, 255, 0, 0.02) 3px,
+                rgba(0, 255, 0, 0.02) 6px
+            );
+            pointer-events: none;
+        }
+
+        .nvx-settings-section::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(0, 255, 0, 0.08) 0%, transparent 50%, rgba(0, 255, 0, 0.08) 100%);
+            pointer-events: none;
+        }
+
+        .nvx-controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .nvx-control-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nvx-btn {
+            width: 90px;
+            height: 90px;
+            border-radius: 0;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            clip-path: polygon(2% 0%, 98% 1%, 100% 84%, 93% 100%, 1% 98%, 0% 15%);
+            box-shadow: 
+                0 0 15px rgba(0, 255, 0, 0.3), 
+                inset 0 0 15px rgba(0, 255, 0, 0.1),
+                0 8px 16px rgba(0, 0, 0, 0.5),
+                0 -4px 8px rgba(0, 255, 0, 0.2);
+            transform: perspective(500px) rotateX(0deg);
+            transform-style: preserve-3d;
+        }
+
+        .nvx-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 0, 0.03) 2px,
+                rgba(0, 255, 0, 0.03) 4px
+            );
+            pointer-events: none;
+        }
+
+        .nvx-btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(0, 255, 0, 0.1) 0%, transparent 50%, rgba(0, 255, 0, 0.1) 100%);
+            pointer-events: none;
+        }
+
+        .nvx-btn:hover {
+            background: linear-gradient(135deg, #001a00 0%, #003300 50%, #001a00 100%);
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.6), inset 0 0 20px rgba(0, 255, 0, 0.2);
+            border-color: #00ff00;
+        }
+
+        .nvx-btn:active {
+            background: linear-gradient(135deg, #002200 0%, #004400 50%, #002200 100%);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.8), inset 0 0 25px rgba(0, 255, 0, 0.3);
+        }
+
+        .nvx-btn.in-call {
+            background: linear-gradient(135deg, #1a0000 0%, #330000 50%, #1a0000 100%);
+            border-color: #ff0000;
+            color: #ff0000;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.8), inset 0 0 20px rgba(255, 0, 0, 0.2);
+        }
+
+        .nvx-btn.in-call:hover {
+            background: linear-gradient(135deg, #220000 0%, #440000 50%, #220000 100%);
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.9), inset 0 0 25px rgba(255, 0, 0, 0.3);
+        }
+
+        .nvx-btn i {
+            font-size: 24px;
+        }
+
+        .nvx-settings {
+            background: linear-gradient(135deg, rgba(220,38,38,0.2), rgba(220,38,38,0.1));
+        }
+
+        .nvx-settings:hover {
+            background: linear-gradient(135deg, rgba(220,38,38,0.3), rgba(220,38,38,0.2));
+        }
+
+        .nvx-vol-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+            position: relative;
+        }
+
+        .nvx-vol-label {
+            font-size: 11px;
+            color: #00ff00;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .nvx-slider-container {
+            flex: 1;
+            position: relative;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .nvx-scale {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            height: 20px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            display: flex;
+            gap: 3px;
+            padding: 3px;
+            clip-path: polygon(2% 0%, 98% 1%, 100% 86%, 94% 100%, 1% 98%, 0% 14%);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3), inset 0 0 15px rgba(0, 255, 0, 0.1);
+            flex-shrink: 0;
+        }
+
+        .nvx-scale::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 0, 0.02) 2px,
+                rgba(0, 255, 0, 0.02) 4px
+            );
+            pointer-events: none;
+        }
+
+        .nvx-scale-block {
+            flex: 1 1 0;
+            min-width: 0;
+            background: linear-gradient(135deg, #050505 0%, #0a0a0a 50%, #050505 100%);
+            border: 1px solid #003300;
+            transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+            clip-path: polygon(3% 0%, 97% 2%, 100% 87%, 87% 100%, 2% 98%, 0% 13%);
+        }
+
+        .nvx-scale-block.active {
+            background: linear-gradient(135deg, #00cc00 0%, #00ff00 50%, #00cc00 100%);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.9), inset 0 0 8px rgba(0, 0, 0, 0.3);
+            border-color: #00ff00;
+        }
+
+        .nvx-slider {
+            position: absolute;
+            width: 100%;
+            -webkit-appearance: none;
+            height: 24px;
+            background: transparent;
+            outline: none;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .nvx-slider::-webkit-slider-runnable-track {
+            height: 24px;
+            background: transparent;
+        }
+
+        .nvx-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #00ff00;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.9), 0 0 30px rgba(0, 255, 0, 0.4);
+            cursor: pointer;
+            margin-top: 0;
+            border: 3px solid #000000;
+            clip-path: polygon(52% 0%, 100% 48%, 48% 100%, 0% 52%);
+            animation: thumbDamage 4s infinite;
+        }
+
+        @keyframes thumbDamage {
+            0%, 85%, 100% {
+                clip-path: polygon(52% 0%, 100% 48%, 48% 100%, 0% 52%);
+            }
+            86% {
+                clip-path: polygon(48% 2%, 98% 52%, 52% 98%, 2% 48%);
+            }
+            87% {
+                clip-path: polygon(54% 0%, 100% 46%, 46% 100%, 0% 54%);
+            }
+            88% {
+                clip-path: polygon(50% 1%, 99% 50%, 50% 99%, 1% 50%);
+            }
+        }
+
+        .nvx-vol-pct {
+            font-size: 12px;
+            color: #00ff00;
+            min-width: 45px;
+            width: 45px;
+            max-width: 45px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-family: 'Courier New', monospace;
+            text-align: right;
+        }
+
+
+        .nvx-field {
+            margin-bottom: 14px;
+        }
+
+        .nvx-field-label {
+            font-size: 11px;
+            color: #00ff00;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .nvx-input {
+            width: 100%;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            border-radius: 0;
+            padding: 12px;
+            color: #00ff00;
+            font-family: 'Syne', sans-serif;
+            box-shadow: 
+                0 0 15px rgba(0, 255, 0, 0.3), 
+                inset 0 0 15px rgba(0, 255, 0, 0.1), 
+                0 4px 8px rgba(0, 0, 0, 0.6),
+                0 -2px 4px rgba(0, 255, 0, 0.2);
+            clip-path: polygon(1% 0%, 99% 1%, 100% 86%, 96% 100%, 2% 99%, 0% 14%);
+            position: relative;
+            transform: perspective(500px) rotateX(0deg);
+            transform-style: preserve-3d;
+        }
+
+        .nvx-input::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 0, 0.02) 2px,
+                rgba(0, 255, 0, 0.02) 4px
+            );
+            pointer-events: none;
+        }
+
+        /* === NEW FEATURES CSS === */
+
+        /* Stats Panel */
+        .nvx-stats {
+            display: flex;
+            justify-content: space-around;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            padding: 12px;
+            margin-top: 14px;
+            clip-path: polygon(1% 0%, 99% 2%, 100% 89%, 94% 100%, 2% 98%, 0% 11%);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+        .nvx-stat-item {
+            text-align: center;
+        }
+        .nvx-stat-label {
+            font-size: 10px;
+            color: #00aa00;
+            text-transform: uppercase;
+            display: block;
+        }
+        .nvx-stat-value {
+            font-size: 14px;
+            color: #00ff00;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Contacts Section */
+        .nvx-contacts-section {
+            margin-top: 14px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            padding: 14px;
+            clip-path: polygon(1% 0%, 99% 2%, 100% 89%, 94% 100%, 2% 98%, 0% 11%);
+        }
+        .nvx-section-title {
+            font-size: 12px;
+            color: #00ff00;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+        .nvx-contacts-list {
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .nvx-contact-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            border-bottom: 1px solid #003300;
+            cursor: pointer;
+        }
+        .nvx-contact-item:hover {
+            background: rgba(0, 255, 0, 0.05);
+        }
+        .nvx-contact-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #333;
+        }
+        .nvx-contact-status.online {
+            background: #00ff00;
+            box-shadow: 0 0 8px #00ff00;
+        }
+        .nvx-contact-status.offline {
+            background: #ff0000;
+        }
+        .nvx-contact-status.in-call {
+            background: #ffff00;
+            box-shadow: 0 0 8px #ffff00;
+        }
+        .nvx-contact-name {
+            flex: 1;
+            color: #00ff00;
+            font-size: 13px;
+        }
+        .nvx-contact-call {
+            width: 28px;
+            height: 28px;
+            background: #001100;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            clip-path: polygon(3% 0%, 97% 2%, 100% 87%, 87% 100%, 2% 98%, 0% 13%);
+        }
+        .nvx-contact-call:hover {
+            background: #003300;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+        .nvx-add-contact {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            text-transform: uppercase;
+            clip-path: polygon(2% 0%, 98% 1%, 100% 86%, 94% 100%, 1% 98%, 0% 14%);
+        }
+        .nvx-add-contact:hover {
+            background: linear-gradient(135deg, #001a00 0%, #003300 50%, #001a00 100%);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+        }
+
+        /* Video Container */
+        .nvx-video-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 640px;
+            height: 480px;
+            background: #000;
+            border: 3px solid #00ff00;
+            z-index: 100;
+            box-shadow: 0 0 50px rgba(0, 255, 0, 0.5);
+        }
+        .nvx-video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #localVideo {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 120px;
+            height: 90px;
+            border: 2px solid #00ff00;
+        }
+
+        /* Chat Section */
+        .nvx-chat-section {
+            margin-top: 14px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            padding: 14px;
+            clip-path: polygon(1% 0%, 99% 2%, 100% 89%, 94% 100%, 2% 98%, 0% 11%);
+        }
+        .nvx-chat-messages {
+            height: 100px;
+            overflow-y: auto;
+            background: #000;
+            border: 1px solid #003300;
+            padding: 8px;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+        .nvx-chat-message {
+            margin-bottom: 5px;
+            color: #00ff00;
+        }
+        .nvx-chat-message.system {
+            color: #00aa00;
+            font-style: italic;
+        }
+        .nvx-chat-input-row {
+            display: flex;
+            gap: 8px;
+        }
+        .nvx-chat-input {
+            flex: 1;
+            background: #000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 8px;
+            font-family: 'Syne', sans-serif;
+            font-size: 12px;
+        }
+        .nvx-chat-input::placeholder {
+            color: #005500;
+        }
+        .nvx-chat-send {
+            width: 36px;
+            height: 36px;
+            background: #001100;
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            clip-path: polygon(3% 0%, 97% 2%, 100% 87%, 87% 100%, 2% 98%, 0% 13%);
+        }
+        .nvx-chat-send:hover {
+            background: #003300;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        /* History Section */
+        .nvx-history-section {
+            margin-top: 14px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            padding: 14px;
+            clip-path: polygon(1% 0%, 99% 2%, 100% 89%, 94% 100%, 2% 98%, 0% 11%);
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .nvx-history-list {
+            font-size: 11px;
+        }
+        .nvx-history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #003300;
+            color: #00ff00;
+        }
+        .nvx-history-item.missed {
+            color: #ff0000;
+        }
+        .nvx-history-item.incoming {
+            color: #00aa00;
+        }
+        .nvx-history-empty {
+            color: #005500;
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+        }
+
+        /* Video Toggle Button */
+        .nvx-btn.video {
+            border-color: #00aaff;
+            color: #00aaff;
+        }
+        .nvx-btn.video.active {
+            background: linear-gradient(135deg, #001a33 0%, #003366 50%, #001a33 100%);
+            box-shadow: 0 0 20px rgba(0, 170, 255, 0.5);
+        }
+
+        /* Button Labels */
+        .nvx-btn-label {
+            font-size: 10px;
+            color: #00ff00;
+            text-align: center;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+
+        /* Broken Glass Overlay */
+        .nvx-cracks-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+            filter: drop-shadow(0 0 2px rgba(0, 255, 0, 0.3));
+        }
+        .nvx-cracks {
+            width: 100%;
+            height: 100%;
+        }
+        .crack-line {
+            fill: none;
+            stroke: rgba(0, 255, 0, 0.4);
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 3px rgba(0, 255, 0, 0.6));
+        }
+        .crack-line.spider {
+            stroke-width: 1;
+            stroke: rgba(0, 255, 0, 0.25);
+        }
+        .crack-line.bullet-crack {
+            stroke-width: 2;
+            stroke: rgba(0, 255, 0, 0.5);
+            filter: drop-shadow(0 0 5px rgba(0, 255, 0, 0.8));
+        }
+        .bullet-hole {
+            fill: rgba(0, 20, 0, 0.8);
+            stroke: rgba(0, 255, 0, 0.6);
+            stroke-width: 2;
+            filter: drop-shadow(0 0 8px rgba(0, 255, 0, 0.9));
+        }
+        .blood-splatter {
+            fill: rgba(139, 0, 0, 0.3);
+            filter: drop-shadow(0 0 5px rgba(139, 0, 0, 0.5));
+            animation: bloodPulse 4s ease-in-out infinite;
+        }
+        @keyframes bloodPulse {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Glitch/Lag Effect Animation */
+        @keyframes glitchLag {
+            0% { transform: translate(0); }
+            20% { transform: translate(-2px, 2px); }
+            40% { transform: translate(2px, -2px); }
+            60% { transform: translate(-1px, 1px); }
+            80% { transform: translate(1px, -1px); }
+            100% { transform: translate(0); }
+        }
+        .nvx-glitch {
+            animation: glitchLag 0.3s ease-in-out;
+        }
+
+        /* Scanlines with distortion */
+        .nvx-scanlines {
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 40;
+            opacity: 0.3;
+        }
+
+        /* Settings Panel */
+        .nvx-settings-panel {
+            margin-top: 14px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            padding: 14px;
+            clip-path: polygon(1% 0%, 99% 2%, 100% 89%, 94% 100%, 2% 98%, 0% 11%);
+            max-height: 400px;
+            overflow-y: auto;
+            display: none;
+        }
+        .nvx-settings-panel.active {
+            display: block;
+        }
+        .nvx-setting-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #003300;
+            flex-wrap: wrap;
+        }
+        .nvx-setting-label-block {
+            color: #00aa00;
+            font-size: 11px;
+            text-transform: uppercase;
+            min-width: 80px;
+            flex-shrink: 0;
+        }
+        .nvx-setting-select {
+            flex: 1;
+            min-width: 150px;
+            background: #000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 6px;
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .nvx-setting-select:focus {
+            outline: none;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+        .nvx-setting-select option {
+            background: #000;
+            color: #00ff00;
+        }
+        .nvx-setting-test {
+            padding: 6px 10px;
+            background: #001100;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            font-size: 10px;
+            clip-path: polygon(3% 0%, 97% 2%, 100% 87%, 87% 100%, 2% 98%, 0% 13%);
+        }
+        .nvx-setting-test:hover {
+            background: #003300;
+        }
+        .nvx-setting-test.testing {
+            background: #330000;
+            border-color: #ff0000;
+            animation: testPulse 0.5s ease-in-out infinite;
+        }
+        @keyframes testPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .nvx-settings-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #00ff00, transparent);
+            margin: 14px 0;
+        }
+        .nvx-setting-slider {
+            flex: 1;
+            height: 6px;
+            background: #003300;
+            border: none;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .nvx-setting-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #00ff00;
+            cursor: pointer;
+            clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+        }
+        .nvx-setting-value {
+            color: #00ff00;
+            font-size: 11px;
+            min-width: 35px;
+            text-align: right;
+        }
+        .nvx-settings-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+        .nvx-settings-btn {
+            flex: 1;
+            padding: 10px;
+            background: linear-gradient(135deg, #001100 0%, #000000 50%, #001100 100%);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            text-transform: uppercase;
+            clip-path: polygon(2% 0%, 98% 1%, 100% 86%, 94% 100%, 1% 98%, 0% 14%);
+        }
+        .nvx-settings-btn:hover {
+            background: linear-gradient(135deg, #003300 0%, #001a00 50%, #003300 100%);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+        }
+        .nvx-settings-btn.refresh {
+            border-color: #00aaff;
+            color: #00aaff;
+        }
+        .nvx-settings-btn.save {
+            border-color: #00ff00;
+            color: #00ff00;
+        }
+        .nvx-setting-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #003300;
+        }
+        .nvx-setting-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #00ff00;
+            font-size: 12px;
+            cursor: pointer;
+            flex: 1;
+        }
+        .nvx-setting-label input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #00ff00;
+            cursor: pointer;
+        }
+        .nvx-settings-toggle {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: linear-gradient(135deg, #001100 0%, #000000 50%, #001100 100%);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            text-transform: uppercase;
+            clip-path: polygon(2% 0%, 98% 1%, 100% 86%, 94% 100%, 1% 98%, 0% 14%);
+        }
+        .nvx-settings-toggle:hover {
+            background: linear-gradient(135deg, #003300 0%, #001a00 50%, #003300 100%);
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+        }
+
+    </style>
+</head>
+<body>
+    <svg style="position: absolute; width: 0; height: 0;">
+        <filter id="damageFilter">
+            <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="5" result="noise" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="2" xChannelSelector="R" yChannelSelector="G" />
+            <feGaussianBlur stdDeviation="0.3" />
+        </filter>
+        
+        <!-- Broken Glass Filter -->
+        <filter id="brokenGlass">
+            <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="3" result="turbulence"/>
+            <feDisplacementMap in2="turbulence" in="SourceGraphic" scale="10" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        
+        <!-- Blood Splatter Filter -->
+        <filter id="bloodSplatter">
+            <feTurbulence type="fractalNoise" baseFrequency="0.1" numOctaves="4" result="noise"/>
+            <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.8   0 0 0 0 0   0 0 0 0 0   0 0 0 1 0" result="redNoise"/>
+            <feGaussianBlur in="redNoise" stdDeviation="2"/>
+        </filter>
+    </svg>
+    
+    <!-- Cracked Glass Overlay -->
+    <div class="nvx-cracks-overlay">
+        <svg class="nvx-cracks" viewBox="0 0 500 650" preserveAspectRatio="none">
+            <!-- Main crack lines -->
+            <path class="crack-line" d="M250,0 L240,100 L260,200 L245,300 L255,400 L240,500 L250,650" />
+            <path class="crack-line" d="M0,150 L100,160 L200,140 L300,165 L400,150 L500,160" />
+            <path class="crack-line" d="M0,400 L80,380 L150,420 L250,380 L350,430 L450,390 L500,410" />
+            <!-- Spider web cracks -->
+            <path class="crack-line spider" d="M150,200 L180,220 L200,200 L220,230 L250,200" />
+            <path class="crack-line spider" d="M350,450 L330,480 L350,520 L380,480 L350,450" />
+            <path class="crack-line spider" d="M100,500 L120,530 L140,500 L160,540 L100,550" />
+            <!-- Bullet hole style cracks -->
+            <circle class="bullet-hole" cx="420" cy="100" r="8" />
+            <path class="crack-line bullet-crack" d="M420,100 L410,80 L430,60 L450,85 L440,100" />
+            <path class="crack-line bullet-crack" d="M420,100 L400,110 L380,95 L390,120 L420,110" />
+            <!-- Blood splatters -->
+            <path class="blood-splatter" d="M50,50 Q60,40 70,50 Q80,60 70,70 Q60,80 50,70 Q40,60 50,50" opacity="0.3"/>
+            <path class="blood-splatter" d="M450,300 Q460,290 470,300 Q480,310 470,320 Q460,330 450,320 Q440,310 450,300" opacity="0.4"/>
+        </svg>
+    </div>
+    
+    <!-- Scanlines Overlay -->
+    <div class="nvx-scanlines"></div>
+    
+    <div class="nvx-window-controls">
+        <button class="nvx-window-btn" onmousedown="event.stopPropagation(); minimizeWindow();">
+            <i class="fa-solid fa-minus"></i>
+        </button>
+        <button class="nvx-window-btn close" onmousedown="event.stopPropagation(); closeWindow();">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+    <div class="nvx-root" id="nvxRoot">
+        <div class="nvx-header">
+            <div>
+                <p class="nvx-title">Nevax</p>
+            </div>
+        </div>
+
+        <div class="nvx-friend-row">
+            <div class="nvx-friend-info">
+            </div>
+        </div>
+
+        <div class="nvx-settings-section">
+            <div class="nvx-field">
+                <div class="nvx-field-label">My ID</div>
+                <input class="nvx-input" id="myIdInput" type="text" placeholder="Enter your ID..." value="user_42" />
+            </div>
+            <div class="nvx-field">
+                <div class="nvx-field-label">Friend ID</div>
+                <input class="nvx-input" id="friendIdInput" type="text" placeholder="Enter friend ID..." value="2" />
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="nvx-settings-panel" id="settingsPanel">
+            <div class="nvx-section-title">Audio & Video Settings</div>
+            
+            <!-- Microphone Selection -->
+            <div class="nvx-setting-row">
+                <label class="nvx-setting-label-block">Microphone</label>
+                <select class="nvx-setting-select" id="micSelect">
+                    <option value="">Default Microphone</option>
+                </select>
+                <button class="nvx-setting-test" onclick="testMicrophone()">
+                    <i class="fa-solid fa-microphone-lines"></i> Test
+                </button>
+            </div>
+            
+            <!-- Audio Output Selection -->
+            <div class="nvx-setting-row">
+                <label class="nvx-setting-label-block">Audio Output</label>
+                <select class="nvx-setting-select" id="audioOutputSelect">
+                    <option value="">Default Output</option>
+                </select>
+            </div>
+            
+            <!-- Camera Selection -->
+            <div class="nvx-setting-row">
+                <label class="nvx-setting-label-block">Camera</label>
+                <select class="nvx-setting-select" id="cameraSelect">
+                    <option value="">Default Camera</option>
+                </select>
+                <button class="nvx-setting-test" onclick="testCamera()">
+                    <i class="fa-solid fa-video"></i> Test
+                </button>
+            </div>
+            
+            <div class="nvx-settings-divider"></div>
+            
+            <div class="nvx-section-title">Audio Processing</div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="checkbox" id="settingEcho" checked />
+                    Echo Cancellation
+                </label>
+            </div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="checkbox" id="settingNoise" checked />
+                    Noise Suppression
+                </label>
+            </div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="checkbox" id="settingAGC" checked />
+                    Auto Gain Control
+                </label>
+            </div>
+            
+            <div class="nvx-settings-divider"></div>
+            
+            <div class="nvx-section-title">Call Settings</div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="checkbox" id="settingVideoPreview" />
+                    Video Preview (no call)
+                </label>
+            </div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="checkbox" id="settingAutoAnswer" />
+                    Auto-answer calls
+                </label>
+            </div>
+            <div class="nvx-setting-row">
+                <label class="nvx-setting-label-block">Ring Volume</label>
+                <input type="range" class="nvx-setting-slider" id="ringVolume" min="0" max="100" value="80" />
+                <span class="nvx-setting-value" id="ringVolumeValue">80%</span>
+            </div>
+            
+            <div class="nvx-settings-divider"></div>
+            
+            <div class="nvx-settings-buttons">
+                <button class="nvx-settings-btn refresh" onclick="refreshDevices()">
+                    <i class="fa-solid fa-rotate"></i> Refresh Devices
+                </button>
+                <button class="nvx-settings-btn save" onclick="saveAllSettings()">
+                    <i class="fa-solid fa-floppy-disk"></i> Save
+                </button>
+                <button class="nvx-settings-toggle" onclick="toggleSettings()">
+                    <i class="fa-solid fa-xmark"></i> Close
+                </button>
+            </div>
+        </div>
+
+        <div class="nvx-controls">
+            <div class="nvx-control-wrapper">
+                <button class="nvx-btn" id="callBtn" onclick="handleCall(event)">
+                    <i class="fa-solid fa-phone"></i>
+                </button>
+                <span class="nvx-btn-label" id="callLbl">Call</span>
+            </div>
+            <div class="nvx-control-wrapper">
+                <button class="nvx-btn" id="muteBtn" onclick="handleMute(event)">
+                    <i class="fa-solid fa-microphone"></i>
+                </button>
+                <span class="nvx-btn-label" id="muteLbl">Mute</span>
+            </div>
+            <div class="nvx-control-wrapper">
+                <button class="nvx-btn video" id="videoBtn" onclick="toggleVideo(event)">
+                    <i class="fa-solid fa-video"></i>
+                </button>
+                <span class="nvx-btn-label">Video</span>
+            </div>
+        </div>
+
+        <div class="nvx-vol-row">
+            <div class="nvx-slider-container">
+                <div class="nvx-scale" id="scaleBlocks">
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                    <div class="nvx-scale-block"></div>
+                </div>
+                <input class="nvx-slider" type="range" min="0" max="100" value="21" step="10" id="volSlider" oninput="updateVol(this)" />
+            </div>
+            <span class="nvx-vol-pct" id="volPct">21%</span>
+        </div>
+
+        <!-- Connection Statistics -->
+        <div class="nvx-stats" id="connectionStats" style="display: none;">
+            <div class="nvx-stat-item">
+                <span class="nvx-stat-label">Ping:</span>
+                <span class="nvx-stat-value" id="statPing">--</span>ms
+            </div>
+            <div class="nvx-stat-item">
+                <span class="nvx-stat-label">Bitrate:</span>
+                <span class="nvx-stat-value" id="statBitrate">--</span>kbps
+            </div>
+            <div class="nvx-stat-item">
+                <span class="nvx-stat-label">Loss:</span>
+                <span class="nvx-stat-value" id="statLoss">--</span>%
+            </div>
+            <div class="nvx-stat-item">
+                <span class="nvx-stat-label">Codec:</span>
+                <span class="nvx-stat-value" id="statCodec">Opus</span>
+            </div>
+        </div>
+
+        <!-- Contacts List -->
+        <div class="nvx-contacts-section">
+            <div class="nvx-section-title">Contacts</div>
+            <div class="nvx-contacts-list" id="contactsList">
+                <div class="nvx-contact-item" data-id="2">
+                    <div class="nvx-contact-status online"></div>
+                    <span class="nvx-contact-name">Friend #2</span>
+                    <button class="nvx-contact-call" onclick="callContact('2')">
+                        <i class="fa-solid fa-phone"></i>
+                    </button>
+                </div>
+            </div>
+            <button class="nvx-add-contact" onclick="addContact()">
+                <i class="fa-solid fa-plus"></i> Add Contact
+            </button>
+        </div>
+
+        <!-- Video Container (hidden by default) -->
+        <div class="nvx-video-container" id="videoContainer" style="display: none;">
+            <video id="localVideo" autoplay muted playsinline></video>
+            <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+
+        <!-- Chat (hidden by default) -->
+        <div class="nvx-chat-section" id="chatSection" style="display: none;">
+            <div class="nvx-chat-messages" id="chatMessages"></div>
+            <div class="nvx-chat-input-row">
+                <input type="text" class="nvx-chat-input" id="chatInput" placeholder="Type message..." />
+                <button class="nvx-chat-send" onclick="sendChatMessage()">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Call History -->
+        <div class="nvx-history-section" id="historySection">
+            <div class="nvx-section-title">Recent Calls</div>
+            <div class="nvx-history-list" id="historyList">
+                <div class="nvx-history-empty">No calls yet</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    var muted = false;
+    var inCall = false;
+
+    // === TAURI INVOKE HELPER ===
+    function tauriInvoke(cmd) {
+        // Method 1: window.__TAURI__.core.invoke (Tauri v2 withGlobalTauri)
+        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+            return window.__TAURI__.core.invoke(cmd);
+        }
+        // Method 2: window.__TAURI_INTERNALS__.invoke
+        if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+            return window.__TAURI_INTERNALS__.invoke(cmd);
+        }
+        // Method 3: window.__TAURI__.invoke (Tauri v1 style)
+        if (window.__TAURI__ && window.__TAURI__.invoke) {
+            return window.__TAURI__.invoke(cmd);
+        }
+        return Promise.reject('No Tauri API found');
+    }
+
+    // === WINDOW CONTROLS ===
+    async function minimizeWindow() {
+        console.log('minimizeWindow called, __TAURI__:', !!window.__TAURI__);
+        try {
+            console.log('Trying invoke minimize_window...');
+            await tauriInvoke('minimize_window');
+            console.log('invoke minimize succeeded');
+            return;
+        } catch(e) { console.log('invoke minimize failed:', e); }
+        try {
+            if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+                console.log('Trying window API minimize...');
+                await window.__TAURI__.window.getCurrentWindow().minimize();
+                console.log('window API minimize succeeded');
+                return;
+            }
+        } catch(e) { console.log('window API minimize failed:', e); }
+    }
+
+    async function closeWindow() {
+        console.log('closeWindow called, __TAURI__:', !!window.__TAURI__);
+        try {
+            console.log('Trying invoke close_window...');
+            await tauriInvoke('close_window');
+            console.log('invoke close succeeded');
+            return;
+        } catch(e) { console.log('invoke close failed:', e); }
+        try {
+            if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+                console.log('Trying window API close...');
+                await window.__TAURI__.window.getCurrentWindow().close();
+                console.log('window API close succeeded');
+                return;
+            }
+        } catch(e) { console.log('window API close failed:', e); }
+    }
+
+    // === DRAG ===
+    async function startDrag() {
+        try {
+            await tauriInvoke('start_drag');
+            return;
+        } catch(e) { console.log('invoke drag failed:', e); }
+        try {
+            if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+                await window.__TAURI__.window.getCurrentWindow().startDragging();
+                return;
+            }
+        } catch(e) { console.log('window API drag failed:', e); }
+    }
+
+    // === INIT ===
+    document.addEventListener('DOMContentLoaded', function() {
+        // Drag on header
+        var header = document.querySelector('.nvx-header');
+        if (header) {
+            header.addEventListener('mousedown', function(e) {
+                if (e.target.closest('button') || e.target.closest('.nvx-window-controls')) return;
+                startDrag();
+            });
+        }
+
+        // Drag on friend-row
+        var friendRow = document.querySelector('.nvx-friend-row');
+        if (friendRow) {
+            friendRow.addEventListener('mousedown', function(e) {
+                if (e.target.closest('button') || e.target.closest('input')) return;
+                startDrag();
+            });
+        }
+
+        // Drag on settings-section
+        var settings = document.querySelector('.nvx-settings-section');
+        if (settings) {
+            settings.addEventListener('mousedown', function(e) {
+                if (e.target.closest('button') || e.target.closest('input')) return;
+                startDrag();
+            });
+        }
+
+        // Drag on controls
+        var controls = document.querySelector('.nvx-controls');
+        if (controls) {
+            controls.addEventListener('mousedown', function(e) {
+                if (e.target.closest('button') || e.target.closest('.nvx-btn')) return;
+                startDrag();
+            });
+        }
+
+        // Drag on vol-row
+        var volRow = document.querySelector('.nvx-vol-row');
+        if (volRow) {
+            volRow.addEventListener('mousedown', function(e) {
+                if (e.target.closest('button') || e.target.closest('input')) return;
+                startDrag();
+            });
+        }
+
+        // Debug: log Tauri API availability
+        console.log('__TAURI__ exists:', !!window.__TAURI__);
+        if (window.__TAURI__) {
+            console.log('__TAURI__.core:', !!window.__TAURI__.core);
+            console.log('__TAURI__.window:', !!window.__TAURI__.window);
+            console.log('__TAURI__.invoke:', !!window.__TAURI__.invoke);
+        }
+        console.log('__TAURI_INTERNALS__ exists:', !!window.__TAURI_INTERNALS__);
+    });
+
+    function handleCall(e) {
+        inCall = !inCall;
+        var btn = document.getElementById('callBtn');
+        if (inCall) {
+            btn.classList.add('in-call');
+        } else {
+            btn.classList.remove('in-call');
+        }
+    }
+
+    function handleMute(e) {
+        muted = !muted;
+        var btn = document.getElementById('muteBtn');
+        var lbl = document.getElementById('muteLbl');
+        if (muted) {
+            btn.classList.add('active');
+            lbl.textContent = 'Unmute';
+        } else {
+            btn.classList.remove('active');
+            lbl.textContent = 'Mute Mic';
+        }
+    }
+
+    function updateVol(slider) {
+        var pct = slider.value;
+        document.getElementById('volPct').textContent = pct + '%';
+        var blocks = document.querySelectorAll('.nvx-scale-block');
+        var activeCount = Math.ceil(pct / 10);
+        blocks.forEach(function(block, index) {
+            if (index < activeCount) {
+                block.classList.add('active');
+            } else {
+                block.classList.remove('active');
+            }
+        });
+    }
+
+    </script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="webrtc.js"></script>
+</body>
+</html>
