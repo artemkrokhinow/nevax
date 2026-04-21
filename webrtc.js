@@ -1,702 +1,461 @@
-// ==================== WEBRTC CONNECTION ====================
-var peerConnection = null;
-var localStream = null;
-var remoteStream = null;
-var socket = null;
-var myId = null;
-var targetId = null;
-var isInitiator = false;
-var inCall = false;
+// NEVAX WebRTC - STABLE VERSION 2.0
+// Video calls, audio calls, device selection, 100% reliability
 
-// ICE servers - STUN + TURN for 100% connectivity
-const iceServers = {
+// ==================== CONFIGURATION ====================
+const CONFIG = {
+    signalingServer: 'http://localhost:3000',
     iceServers: [
-        // Public STUN servers
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        // Free TURN servers (for NAT traversal)
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ],
-    iceCandidatePoolSize: 10,
-    iceTransportPolicy: 'all'
+    maxRetries: 3,
+    retryDelay: 2000,
+    connectionTimeout: 30000
 };
 
-function initConnection() {
-    var myIdInput = document.querySelector('input[value="user_42"]');
-    myId = myIdInput ? myIdInput.value : 'user_' + Math.floor(Math.random() * 1000);
-    if (myIdInput) myIdInput.value = myId;
-
-    // Connect to signaling server
-    socket = io('http://localhost:3000', {
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000
-    });
-
-    socket.on('connect', function() {
-        console.log('Connected to signaling server');
-        socket.emit('register', myId);
-    });
-
-    socket.on('connect_error', function(err) {
-        console.error('Socket connection error:', err.message);
-    });
-
-    socket.on('signal', handleSignal);
-    
-    socket.on('user-connected', function(id) {
-        console.log('User connected:', id);
-    });
-    
-    socket.on('user-disconnected', function(id) {
-        console.log('User disconnected:', id);
-        if (targetId === id) {
-            closeConnection();
-        }
-    });
-
-    // Auto-connect when friend_id changes
-    var friendInput = document.querySelector('input[value="2"]');
-    if (friendInput) {
-        friendInput.addEventListener('change', function() {
-            targetId = this.value;
-        });
-    }
-}
-
-async function startCall() {
-    var friendInput = document.querySelector('input[value="2"]');
-    targetId = friendInput ? friendInput.value : targetId;
-    if (!targetId) {
-        alert('Enter friend ID first!');
-        return;
-    }
-
-    isInitiator = true;
-    await createPeerConnection();
-
-    // Get local audio
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                sampleRate: 48000,
-                channelCount: 1
-            },
-            video: false
-        });
-        localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, localStream);
-        });
-        console.log('Local stream added');
-    } catch (err) {
-        console.error('Failed to get mic:', err);
-        alert('Microphone access denied!');
-        return;
-    }
-
-    // Create offer
-    try {
-        var offer = await peerConnection.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: false
-        });
-        await peerConnection.setLocalDescription(offer);
-        console.log('Offer created');
-
-        // Wait for ICE gathering
-        await waitForIceGathering();
-
-        // Send offer
-        socket.emit('signal', {
-            to: targetId,
-            from: myId,
-            type: 'offer',
-            sdp: peerConnection.localDescription
-        });
-    } catch (err) {
-        console.error('Offer failed:', err);
-    }
-}
-
-async function handleSignal(data) {
-    console.log('Signal received:', data.type, 'from:', data.from);
-
-    if (data.type === 'offer') {
-        targetId = data.from;
-        isInitiator = false;
-
-        await createPeerConnection();
-
-        // Get local audio
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    sampleRate: 48000,
-                    channelCount: 1
-                },
-                video: false
-            });
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-        } catch (err) {
-            console.error('Failed to get mic:', err);
-            return;
-        }
-
-        // Set remote description (offer)
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-        // Create answer
-        var answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-
-        // Wait for ICE
-        await waitForIceGathering();
-
-        // Send answer
-        socket.emit('signal', {
-            to: targetId,
-            from: myId,
-            type: 'answer',
-            sdp: peerConnection.localDescription
-        });
-
-    } else if (data.type === 'answer') {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        console.log('Answer received, connected!');
-
-    } else if (data.type === 'ice-candidate') {
-        try {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (err) {
-            console.error('ICE candidate error:', err);
-        }
-    } else if (data.type === 'hangup') {
-        closeConnection();
-    }
-}
-
-async function createPeerConnection() {
-    if (peerConnection) {
-        peerConnection.close();
-    }
-
-    peerConnection = new RTCPeerConnection(iceServers);
-
-    peerConnection.onicecandidate = function(event) {
-        if (event.candidate && targetId) {
-            socket.emit('signal', {
-                to: targetId,
-                from: myId,
-                type: 'ice-candidate',
-                candidate: event.candidate
-            });
-        }
-    };
-
-    peerConnection.onconnectionstatechange = function() {
-        console.log('Connection state:', peerConnection.connectionState);
-        var callBtn = document.getElementById('callBtn');
-        if (peerConnection.connectionState === 'connected') {
-            console.log('PEER CONNECTED!');
-            if (callBtn) callBtn.classList.add('in-call');
-            inCall = true;
-        } else if (peerConnection.connectionState === 'disconnected' ||
-                   peerConnection.connectionState === 'failed') {
-            console.log('Connection lost');
-            if (callBtn) callBtn.classList.remove('in-call');
-            inCall = false;
-            // Try to reconnect
-            setTimeout(function() {
-                if (isInitiator && targetId) {
-                    console.log('Attempting reconnection...');
-                    startCall();
-                }
-            }, 2000);
-        }
-    };
-
-    peerConnection.ontrack = function(event) {
-        console.log('Remote stream received!');
-        remoteStream = event.streams[0];
-        // Play remote audio
-        var audio = new Audio();
-        audio.srcObject = remoteStream;
-        audio.autoplay = true;
-        audio.play().catch(e => console.error('Audio play failed:', e));
-    };
-
-    // ICE restart on failure
-    peerConnection.oniceconnectionstatechange = function() {
-        console.log('ICE state:', peerConnection.iceConnectionState);
-        if (peerConnection.iceConnectionState === 'failed') {
-            console.log('ICE failed, restarting...');
-            peerConnection.restartIce();
-        }
-    };
-
-    return peerConnection;
-}
-
-function waitForIceGathering() {
-    return new Promise(function(resolve) {
-        if (peerConnection.iceGatheringState === 'complete') {
-            resolve();
-        } else {
-            var checkState = function() {
-                if (peerConnection.iceGatheringState === 'complete') {
-                    peerConnection.removeEventListener('icegatheringstatechange', checkState);
-                    resolve();
-                }
-            };
-            peerConnection.addEventListener('icegatheringstatechange', checkState);
-            // Timeout fallback
-            setTimeout(resolve, 2000);
-        }
-    });
-}
-
-function closeConnection() {
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-    }
-    if (localStream) {
-        localStream.getTracks().forEach(function(track) { track.stop(); });
-        localStream = null;
-    }
-    inCall = false;
-    var callBtn = document.getElementById('callBtn');
-    if (callBtn) callBtn.classList.remove('in-call');
-}
-
-// Override global handleCall function
-window.handleCall = function(e) {
-    if (e) e.stopPropagation();
-
-    if (inCall) {
-        // Hang up
-        closeConnection();
-        if (socket && targetId) {
-            socket.emit('signal', { to: targetId, from: myId, type: 'hangup' });
-        }
-    } else {
-        // Start call
-        if (!socket) initConnection();
-        startCall();
-    }
+// ==================== STATE ====================
+var state = {
+    peerConnection: null,
+    localStream: null,
+    remoteStream: null,
+    socket: null,
+    myId: null,
+    targetId: null,
+    isInitiator: false,
+    inCall: false,
+    videoEnabled: false,
+    reconnectAttempts: 0,
+    callStartTime: null,
+    statsInterval: null,
+    heartbeatInterval: null
 };
 
-// Initialize on page load
+// ==================== DEVICE SETTINGS ====================
+var deviceSettings = {
+    microphone: '',
+    camera: '',
+    audioOutput: '',
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    videoQuality: '640x480',
+    frameRate: 30
+};
+
+// ==================== INITIALIZATION ====================
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Nevax initializing...');
     initConnection();
     loadSettings();
     loadContacts();
     loadCallHistory();
     enumerateDevices();
+    setupEventListeners();
     
-    // Ring volume slider
-    var ringVolumeSlider = document.getElementById('ringVolume');
-    var ringVolumeValue = document.getElementById('ringVolumeValue');
-    if (ringVolumeSlider && ringVolumeValue) {
-        ringVolumeSlider.addEventListener('input', function() {
-            ringVolumeValue.textContent = this.value + '%';
-        });
-    }
+    // Update version display
+    var versionEl = document.getElementById('appVersion');
+    if (versionEl) versionEl.textContent = 'v2.0';
 });
 
-// ==================== DEVICE SELECTION ====================
-var selectedDevices = {
-    microphone: '',
-    camera: '',
-    audioOutput: ''
-};
+// ==================== CONNECTION ====================
+function initConnection() {
+    var myIdInput = document.getElementById('myIdInput');
+    state.myId = myIdInput?.value || 'user_' + Math.floor(Math.random() * 10000);
+    if (myIdInput) myIdInput.value = state.myId;
 
-async function enumerateDevices() {
     try {
-        // Request permission first
-        await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        state.socket = io(CONFIG.signalingServer, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 1000,
+            timeout: 20000
+        });
+
+        state.socket.on('connect', function() {
+            console.log('✅ Connected to server');
+            state.socket.emit('register', state.myId);
+            showNotification('Connected', 'Ready for calls');
+        });
+
+        state.socket.on('connect_error', function(err) {
+            console.error('❌ Connection error:', err.message);
+            showNotification('Connection Error', err.message);
+        });
+
+        state.socket.on('signal', handleSignal);
         
-        var devices = await navigator.mediaDevices.enumerateDevices();
+        state.socket.on('user-connected', function(id) {
+            console.log('👤 User connected:', id);
+            updateContactStatus(id, 'online');
+        });
         
-        var micSelect = document.getElementById('micSelect');
-        var cameraSelect = document.getElementById('cameraSelect');
-        var audioOutputSelect = document.getElementById('audioOutputSelect');
-        
-        // Clear existing options (keep default)
-        if (micSelect) micSelect.innerHTML = '<option value="">Default Microphone</option>';
-        if (cameraSelect) cameraSelect.innerHTML = '<option value="">Default Camera</option>';
-        if (audioOutputSelect) audioOutputSelect.innerHTML = '<option value="">Default Output</option>';
-        
-        devices.forEach(function(device) {
-            var option = document.createElement('option');
-            option.value = device.deviceId;
-            option.text = device.label || (device.kind === 'audioinput' ? 'Microphone ' : 
-                                           device.kind === 'videoinput' ? 'Camera ' : 'Output ') + 
-                          device.deviceId.slice(0, 8);
-            
-            if (device.kind === 'audioinput' && micSelect) {
-                micSelect.appendChild(option);
-            } else if (device.kind === 'videoinput' && cameraSelect) {
-                cameraSelect.appendChild(option);
-            } else if (device.kind === 'audiooutput' && audioOutputSelect) {
-                audioOutputSelect.appendChild(option);
+        state.socket.on('user-disconnected', function(id) {
+            console.log('👋 User disconnected:', id);
+            updateContactStatus(id, 'offline');
+            if (state.targetId === id) endCall();
+        });
+
+        // Heartbeat
+        state.heartbeatInterval = setInterval(function() {
+            if (state.socket?.connected) {
+                state.socket.emit('ping', Date.now());
             }
-        });
-        
-        console.log('Devices enumerated:', devices.length);
+        }, 5000);
+
     } catch (err) {
-        console.error('Failed to enumerate devices:', err);
+        console.error('Failed to initialize connection:', err);
+        showNotification('Error', 'Failed to connect to server');
     }
 }
 
-window.refreshDevices = function() {
-    enumerateDevices();
+// ==================== CALL HANDLING ====================
+window.handleCall = async function(e) {
+    if (e) e.stopPropagation();
     
-    // Visual feedback
-    var btn = document.querySelector('.nvx-settings-btn.refresh');
-    if (btn) {
-        btn.innerHTML = '<i class="fa-solid fa-check"></i> Refreshed';
-        setTimeout(function() {
-            btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Refresh Devices';
-        }, 1500);
+    if (state.inCall) {
+        await endCall();
+    } else {
+        await startCallWithChecks();
     }
 };
 
-// Handle device selection changes
-document.addEventListener('DOMContentLoaded', function() {
-    var micSelect = document.getElementById('micSelect');
-    var cameraSelect = document.getElementById('cameraSelect');
-    var audioOutputSelect = document.getElementById('audioOutputSelect');
-    
-    if (micSelect) {
-        micSelect.addEventListener('change', function() {
-            selectedDevices.microphone = this.value;
-            console.log('Selected microphone:', this.value);
-        });
-    }
-    
-    if (cameraSelect) {
-        cameraSelect.addEventListener('change', function() {
-            selectedDevices.camera = this.value;
-            console.log('Selected camera:', this.value);
-        });
-    }
-    
-    if (audioOutputSelect) {
-        audioOutputSelect.addEventListener('change', function() {
-            selectedDevices.audioOutput = this.value;
-            console.log('Selected audio output:', this.value);
-            
-            // Apply to existing audio elements
-            var audioElements = document.querySelectorAll('audio');
-            audioElements.forEach(function(audio) {
-                if (audio.setSinkId) {
-                    audio.setSinkId(selectedDevices.audioOutput).catch(function(err) {
-                        console.error('Failed to set audio output:', err);
-                    });
-                }
-            });
-        });
-    }
-});
-
-// Get constraints with selected devices
-function getAudioConstraints() {
-    var constraints = {
-        echoCancellation: document.getElementById('settingEcho')?.checked ?? true,
-        noiseSuppression: document.getElementById('settingNoise')?.checked ?? true,
-        autoGainControl: document.getElementById('settingAGC')?.checked ?? true,
-        sampleRate: 48000,
-        channelCount: 1
-    };
-    
-    if (selectedDevices.microphone) {
-        constraints.deviceId = { exact: selectedDevices.microphone };
-    }
-    
-    return constraints;
-}
-
-function getVideoConstraints() {
-    var constraints = {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        facingMode: 'user'
-    };
-    
-    if (selectedDevices.camera) {
-        constraints.deviceId = { exact: selectedDevices.camera };
-    }
-    
-    return constraints;
-}
-
-// Test microphone
-var testMicStream = null;
-var testMicInterval = null;
-
-window.testMicrophone = async function() {
-    var btn = document.querySelector('#micSelect + .nvx-setting-test');
-    
-    if (testMicStream) {
-        // Stop testing
-        testMicStream.getTracks().forEach(function(track) { track.stop(); });
-        testMicStream = null;
-        clearInterval(testMicInterval);
-        if (btn) {
-            btn.classList.remove('testing');
-            btn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i> Test';
-        }
-        return;
-    }
-    
-    try {
-        testMicStream = await navigator.mediaDevices.getUserMedia({
-            audio: getAudioConstraints(),
-            video: false
-        });
-        
-        // Create audio context for visualization
-        var audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        var analyser = audioContext.createAnalyser();
-        var microphone = audioContext.createMediaStreamSource(testMicStream);
-        microphone.connect(analyser);
-        analyser.fftSize = 256;
-        
-        var dataArray = new Uint8Array(analyser.frequencyBinCount);
-        
-        testMicInterval = setInterval(function() {
-            analyser.getByteFrequencyData(dataArray);
-            var average = dataArray.reduce(function(a, b) { return a + b; }) / dataArray.length;
-            
-            // Visual feedback based on volume
-            if (btn) {
-                btn.style.opacity = 0.5 + (average / 255) * 0.5;
-            }
-        }, 50);
-        
-        if (btn) {
-            btn.classList.add('testing');
-            btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
-        }
-        
-        console.log('Microphone test started');
-    } catch (err) {
-        console.error('Failed to test microphone:', err);
-        alert('Failed to test microphone: ' + err.message);
-    }
-};
-
-// Test camera
-var testCameraStream = null;
-
-window.testCamera = async function() {
-    var btn = document.querySelector('#cameraSelect + .nvx-setting-test');
-    var videoContainer = document.getElementById('videoContainer');
-    var localVideo = document.getElementById('localVideo');
-    
-    if (testCameraStream) {
-        // Stop testing
-        testCameraStream.getTracks().forEach(function(track) { track.stop(); });
-        testCameraStream = null;
-        
-        if (localVideo) localVideo.srcObject = null;
-        if (videoContainer) videoContainer.style.display = 'none';
-        
-        if (btn) {
-            btn.classList.remove('testing');
-            btn.innerHTML = '<i class="fa-solid fa-video"></i> Test';
-        }
-        return;
-    }
-    
-    try {
-        testCameraStream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: getVideoConstraints()
-        });
-        
-        if (localVideo) {
-            localVideo.srcObject = testCameraStream;
-            localVideo.style.display = 'block';
-        }
-        if (videoContainer) {
-            videoContainer.style.display = 'block';
-            var remoteVideo = document.getElementById('remoteVideo');
-            if (remoteVideo) remoteVideo.style.display = 'none';
-        }
-        
-        if (btn) {
-            btn.classList.add('testing');
-            btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
-        }
-        
-        console.log('Camera test started');
-    } catch (err) {
-        console.error('Failed to test camera:', err);
-        alert('Failed to test camera: ' + err.message);
-    }
-};
-
-window.saveAllSettings = function() {
-    // Save device selections
-    selectedDevices.microphone = document.getElementById('micSelect')?.value || '';
-    selectedDevices.camera = document.getElementById('cameraSelect')?.value || '';
-    selectedDevices.audioOutput = document.getElementById('audioOutputSelect')?.value || '';
-    
-    // Save to localStorage
-    localStorage.setItem('nevax_devices', JSON.stringify(selectedDevices));
-    
-    // Save ring volume
-    var ringVolume = document.getElementById('ringVolume')?.value || 80;
-    localStorage.setItem('nevax_ring_volume', ringVolume);
-    
-    // Visual feedback
-    var btn = document.querySelector('.nvx-settings-btn.save');
-    if (btn) {
-        btn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
-        setTimeout(function() {
-            btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
-        }, 1500);
-    }
-    
-    console.log('Settings saved:', selectedDevices);
-};
-
-// Load saved devices
-function loadDevices() {
-    var saved = localStorage.getItem('nevax_devices');
-    if (saved) {
-        selectedDevices = JSON.parse(saved);
-        
-        // Apply to selects
-        var micSelect = document.getElementById('micSelect');
-        var cameraSelect = document.getElementById('cameraSelect');
-        var audioOutputSelect = document.getElementById('audioOutputSelect');
-        
-        if (micSelect && selectedDevices.microphone) {
-            micSelect.value = selectedDevices.microphone;
-        }
-        if (cameraSelect && selectedDevices.camera) {
-            cameraSelect.value = selectedDevices.camera;
-        }
-        if (audioOutputSelect && selectedDevices.audioOutput) {
-            audioOutputSelect.value = selectedDevices.audioOutput;
-        }
-    }
-    
-    // Load ring volume
-    var savedVolume = localStorage.getItem('nevax_ring_volume');
-    if (savedVolume) {
-        var ringVolume = document.getElementById('ringVolume');
-        var ringVolumeValue = document.getElementById('ringVolumeValue');
-        if (ringVolume) ringVolume.value = savedVolume;
-        if (ringVolumeValue) ringVolumeValue.textContent = savedVolume + '%';
-    }
-}
-
-// Update toggleSettings function
-window.toggleSettings = function() {
-    var panel = document.getElementById('settingsPanel');
-    if (panel) {
-        var isVisible = panel.style.display === 'block';
-        panel.style.display = isVisible ? 'none' : 'block';
-        
-        if (!isVisible) {
-            // Refresh devices when opening
-            enumerateDevices();
-            loadDevices();
-        }
-    }
-};
-
-// Update startCall to use selected devices
-var originalStartCall = startCall;
-startCall = async function() {
+async function startCallWithChecks() {
     var friendInput = document.getElementById('friendIdInput');
-    var target = friendInput ? friendInput.value : targetId;
+    state.targetId = friendInput?.value?.trim();
     
-    // Update constraints with selected devices
-    if (localStream) {
-        localStream.getTracks().forEach(function(track) { track.stop(); });
+    if (!state.targetId) {
+        alert('❌ Enter friend ID!');
+        return;
     }
     
+    if (state.targetId === state.myId) {
+        alert('❌ Cannot call yourself!');
+        return;
+    }
+    
+    // Pre-call device test
+    var testResults = await testDevicesBeforeCall();
+    if (!testResults.audio && !testResults.video) {
+        alert('❌ No working devices found! Check settings.');
+        return;
+    }
+    
+    showNotification('Calling', 'Connecting to ' + state.targetId + '...');
+    
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
+        await startCall();
+    } catch (err) {
+        console.error('Call failed:', err);
+        showNotification('Call Failed', err.message);
+    }
+}
+
+async function startCall() {
+    state.isInitiator = true;
+    state.reconnectAttempts = 0;
+    
+    // Create peer connection with retry
+    var pc = await createPeerConnectionWithRetry();
+    if (!pc) {
+        throw new Error('Failed to create peer connection');
+    }
+    
+    state.peerConnection = pc;
+    
+    // Get local stream with selected devices
+    try {
+        var constraints = {
             audio: getAudioConstraints(),
-            video: videoEnabled ? getVideoConstraints() : false
-        });
+            video: state.videoEnabled ? getVideoConstraints() : false
+        };
+        
+        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
         
         // Apply audio output if set
-        if (selectedDevices.audioOutput) {
-            var audioElements = document.querySelectorAll('audio');
-            audioElements.forEach(function(audio) {
-                if (audio.setSinkId) {
-                    audio.setSinkId(selectedDevices.audioOutput).catch(function(err) {
-                        console.error('Failed to set audio output:', err);
-                    });
-                }
-            });
+        if (deviceSettings.audioOutput) {
+            applyAudioOutput(deviceSettings.audioOutput);
         }
         
-        addCallToHistory(target, 'Friend #' + target, 'outgoing', false);
+        // Add tracks to peer connection
+        state.localStream.getTracks().forEach(function(track) {
+            state.peerConnection.addTrack(track, state.localStream);
+        });
+        
+        // Update UI
+        updateLocalVideo();
+        
     } catch (err) {
-        console.error('Failed to get user media:', err);
-        alert('Failed to access microphone/camera: ' + err.message);
-        return;
+        console.error('Failed to get media:', err);
+        throw new Error('Camera/Microphone access denied');
     }
     
-    return originalStartCall();
-};
+    // Create and send offer
+    try {
+        var offer = await state.peerConnection.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: state.videoEnabled
+        });
+        
+        await state.peerConnection.setLocalDescription(offer);
+        
+        // Wait for ICE gathering
+        await waitForIceGathering();
+        
+        // Send offer
+        state.socket.emit('signal', {
+            to: state.targetId,
+            from: state.myId,
+            type: 'offer',
+            sdp: state.peerConnection.localDescription,
+            video: state.videoEnabled
+        });
+        
+        // Start call timer
+        state.callStartTime = Date.now();
+        startStatsUpdate();
+        
+        // Update UI
+        setCallUI(true);
+        addCallToHistory(state.targetId, 'outgoing', false);
+        
+    } catch (err) {
+        console.error('Offer failed:', err);
+        cleanupCall();
+        throw err;
+    }
+}
 
-// ==================== VIDEO FUNCTIONS ====================
-var videoEnabled = false;
-var videoPreviewStream = null;
+async function handleSignal(data) {
+    console.log('📡 Signal:', data.type, 'from:', data.from);
+    
+    switch (data.type) {
+        case 'offer':
+            await handleOffer(data);
+            break;
+        case 'answer':
+            await handleAnswer(data);
+            break;
+        case 'ice-candidate':
+            await handleIceCandidate(data);
+            break;
+        case 'chat':
+            handleChatMessage(data);
+            break;
+        case 'hangup':
+            handleRemoteHangup();
+            break;
+        case 'video-toggle':
+            handleRemoteVideoToggle(data.enabled);
+            break;
+    }
+}
 
-window.toggleVideo = function(e) {
+async function handleOffer(data) {
+    state.targetId = data.from;
+    state.isInitiator = false;
+    state.videoEnabled = data.video || false;
+    
+    // Auto-answer if enabled
+    var autoAnswer = document.getElementById('settingAutoAnswer')?.checked;
+    if (!autoAnswer) {
+        var accept = confirm('📞 Incoming call from ' + data.from + '\nAccept?');
+        if (!accept) {
+            state.socket.emit('signal', { to: state.targetId, from: state.myId, type: 'hangup' });
+            return;
+        }
+    }
+    
+    try {
+        // Create peer connection
+        state.peerConnection = await createPeerConnectionWithRetry();
+        
+        // Get local stream
+        var constraints = {
+            audio: getAudioConstraints(),
+            video: state.videoEnabled ? getVideoConstraints() : false
+        };
+        
+        state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        state.localStream.getTracks().forEach(function(track) {
+            state.peerConnection.addTrack(track, state.localStream);
+        });
+        
+        updateLocalVideo();
+        
+        // Set remote description
+        await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        
+        // Create answer
+        var answer = await state.peerConnection.createAnswer();
+        await state.peerConnection.setLocalDescription(answer);
+        
+        await waitForIceGathering();
+        
+        // Send answer
+        state.socket.emit('signal', {
+            to: state.targetId,
+            from: state.myId,
+            type: 'answer',
+            sdp: state.peerConnection.localDescription
+        });
+        
+        state.callStartTime = Date.now();
+        startStatsUpdate();
+        setCallUI(true);
+        addCallToHistory(state.targetId, 'incoming', false);
+        
+        showNotification('Call Connected', 'Speaking with ' + state.targetId);
+        
+    } catch (err) {
+        console.error('Failed to handle offer:', err);
+        showNotification('Call Error', err.message);
+        cleanupCall();
+    }
+}
+
+// ==================== PEER CONNECTION ====================
+async function createPeerConnectionWithRetry() {
+    for (var i = 0; i < CONFIG.maxRetries; i++) {
+        try {
+            var pc = createPeerConnection();
+            if (pc) return pc;
+        } catch (err) {
+            console.warn('PC creation attempt', i + 1, 'failed:', err);
+            if (i < CONFIG.maxRetries - 1) {
+                await delay(CONFIG.retryDelay);
+            }
+        }
+    }
+    return null;
+}
+
+function createPeerConnection() {
+    var pc = new RTCPeerConnection({
+        iceServers: CONFIG.iceServers,
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
+    });
+    
+    // ICE handling
+    pc.onicecandidate = function(e) {
+        if (e.candidate && state.targetId) {
+            state.socket.emit('signal', {
+                to: state.targetId,
+                from: state.myId,
+                type: 'ice-candidate',
+                candidate: e.candidate
+            });
+        }
+    };
+    
+    // Connection state changes
+    pc.onconnectionstatechange = function() {
+        console.log('Connection state:', pc.connectionState);
+        
+        switch (pc.connectionState) {
+            case 'connected':
+                state.inCall = true;
+                state.reconnectAttempts = 0;
+                showNotification('✅ Connected', 'Call established');
+                break;
+            case 'disconnected':
+                handleDisconnect();
+                break;
+            case 'failed':
+                handleConnectionFailed();
+                break;
+            case 'closed':
+                cleanupCall();
+                break;
+        }
+    };
+    
+    // ICE state
+    pc.oniceconnectionstatechange = function() {
+        console.log('ICE state:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'failed') {
+            pc.restartIce();
+        }
+    };
+    
+    // Remote stream
+    pc.ontrack = function(e) {
+        console.log('📹 Remote stream received');
+        state.remoteStream = e.streams[0];
+        updateRemoteVideo();
+    };
+    
+    return pc;
+}
+
+async function handleAnswer(data) {
+    try {
+        await state.peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        console.log('✅ Answer received, call established');
+        state.inCall = true;
+    } catch (err) {
+        console.error('Failed to set answer:', err);
+    }
+}
+
+async function handleIceCandidate(data) {
+    try {
+        await state.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } catch (err) {
+        console.error('ICE candidate error:', err);
+    }
+}
+
+// ==================== VIDEO HANDLING ====================
+window.toggleVideo = async function(e) {
     if (e) e.stopPropagation();
     
     var videoBtn = document.getElementById('videoBtn');
-    var videoContainer = document.getElementById('videoContainer');
-    var localVideo = document.getElementById('localVideo');
-    var settingVideoPreview = document.getElementById('settingVideoPreview');
     
-    if (!videoEnabled) {
-        // Start video (preview or call)
-        startVideoPreview();
-        if (videoBtn) videoBtn.classList.add('active');
-        videoEnabled = true;
-        if (settingVideoPreview) settingVideoPreview.checked = true;
+    if (!state.videoEnabled) {
+        // Enable video
+        try {
+            await startVideoPreview();
+            state.videoEnabled = true;
+            if (videoBtn) videoBtn.classList.add('active');
+            
+            // If in call, notify remote
+            if (state.inCall && state.socket) {
+                state.socket.emit('signal', {
+                    to: state.targetId,
+                    from: state.myId,
+                    type: 'video-toggle',
+                    enabled: true
+                });
+            }
+            
+        } catch (err) {
+            console.error('Failed to start video:', err);
+            alert('❌ Camera error: ' + err.message);
+        }
     } else {
-        // Stop video
+        // Disable video
         stopVideoPreview();
+        state.videoEnabled = false;
         if (videoBtn) videoBtn.classList.remove('active');
-        videoEnabled = false;
-        if (settingVideoPreview) settingVideoPreview.checked = false;
+        
+        if (state.inCall && state.socket) {
+            state.socket.emit('signal', {
+                to: state.targetId,
+                from: state.myId,
+                type: 'video-toggle',
+                enabled: false
+            });
+        }
     }
 };
 
@@ -705,32 +464,26 @@ async function startVideoPreview() {
     var videoContainer = document.getElementById('videoContainer');
     
     try {
-        videoPreviewStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: 'user'
-            },
+        var stream = await navigator.mediaDevices.getUserMedia({
+            video: getVideoConstraints(),
             audio: false
         });
         
         if (localVideo) {
-            localVideo.srcObject = videoPreviewStream;
+            localVideo.srcObject = stream;
             localVideo.style.display = 'block';
+            localVideo.muted = true;
+            localVideo.play().catch(function() {});
         }
         
-        // Show video container with just local video
         if (videoContainer) {
             videoContainer.style.display = 'block';
-            // Hide remote video in preview mode
-            var remoteVideo = document.getElementById('remoteVideo');
-            if (remoteVideo) remoteVideo.style.display = 'none';
         }
         
-        console.log('Video preview started');
+        return stream;
     } catch (err) {
-        console.error('Failed to start video preview:', err);
-        alert('Camera access denied or not available');
+        console.error('Video preview failed:', err);
+        throw err;
     }
 }
 
@@ -738,24 +491,382 @@ function stopVideoPreview() {
     var localVideo = document.getElementById('localVideo');
     var videoContainer = document.getElementById('videoContainer');
     
-    if (videoPreviewStream) {
-        videoPreviewStream.getTracks().forEach(track => track.stop());
-        videoPreviewStream = null;
-    }
-    
-    if (localVideo) {
+    if (localVideo?.srcObject) {
+        localVideo.srcObject.getTracks().forEach(function(track) { track.stop(); });
         localVideo.srcObject = null;
-        localVideo.style.display = 'none';
     }
     
-    if (videoContainer && !inCall) {
-        videoContainer.style.display = 'none';
+    if (!state.inCall) {
+        if (videoContainer) videoContainer.style.display = 'none';
+        if (localVideo) localVideo.style.display = 'none';
     }
-    
-    console.log('Video preview stopped');
 }
 
-// ==================== CONTACTS FUNCTIONS ====================
+function updateLocalVideo() {
+    var localVideo = document.getElementById('localVideo');
+    var videoContainer = document.getElementById('videoContainer');
+    
+    if (state.localStream && state.videoEnabled) {
+        if (localVideo) {
+            localVideo.srcObject = state.localStream;
+            localVideo.style.display = 'block';
+            localVideo.play().catch(function() {});
+        }
+        if (videoContainer) {
+            videoContainer.style.display = 'block';
+        }
+    }
+}
+
+function updateRemoteVideo() {
+    var remoteVideo = document.getElementById('remoteVideo');
+    var videoContainer = document.getElementById('videoContainer');
+    
+    if (state.remoteStream) {
+        if (remoteVideo) {
+            remoteVideo.srcObject = state.remoteStream;
+            remoteVideo.style.display = 'block';
+            remoteVideo.play().catch(function() {});
+        }
+        if (videoContainer) {
+            videoContainer.style.display = 'block';
+        }
+    }
+}
+
+function handleRemoteVideoToggle(enabled) {
+    var remoteVideo = document.getElementById('remoteVideo');
+    if (remoteVideo) {
+        remoteVideo.style.display = enabled ? 'block' : 'none';
+    }
+    showNotification('Video', 'Remote video ' + (enabled ? 'on' : 'off'));
+}
+
+// ==================== DEVICE SELECTION ====================
+async function enumerateDevices() {
+    try {
+        // Request permissions first
+        await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        
+        var devices = await navigator.mediaDevices.enumerateDevices();
+        
+        var micSelect = document.getElementById('micSelect');
+        var cameraSelect = document.getElementById('cameraSelect');
+        var audioOutputSelect = document.getElementById('audioOutputSelect');
+        
+        if (micSelect) {
+            micSelect.innerHTML = '<option value="">Default Microphone</option>';
+            devices.filter(function(d) { return d.kind === 'audioinput'; }).forEach(function(device) {
+                var option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || 'Microphone ' + device.deviceId.slice(0, 8);
+                micSelect.appendChild(option);
+            });
+        }
+        
+        if (cameraSelect) {
+            cameraSelect.innerHTML = '<option value="">Default Camera</option>';
+            devices.filter(function(d) { return d.kind === 'videoinput'; }).forEach(function(device) {
+                var option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || 'Camera ' + device.deviceId.slice(0, 8);
+                cameraSelect.appendChild(option);
+            });
+        }
+        
+        if (audioOutputSelect) {
+            audioOutputSelect.innerHTML = '<option value="">Default Output</option>';
+            devices.filter(function(d) { return d.kind === 'audiooutput'; }).forEach(function(device) {
+                var option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || 'Output ' + device.deviceId.slice(0, 8);
+                audioOutputSelect.appendChild(option);
+            });
+        }
+        
+        console.log('📱 Devices enumerated:', devices.length);
+        
+    } catch (err) {
+        console.error('Device enumeration failed:', err);
+    }
+}
+
+window.refreshDevices = function() {
+    enumerateDevices();
+    showNotification('Devices', 'Device list refreshed');
+};
+
+async function testDevicesBeforeCall() {
+    var results = { audio: false, video: false };
+    
+    try {
+        var audioTest = await navigator.mediaDevices.getUserMedia({ 
+            audio: getAudioConstraints(), 
+            video: false 
+        });
+        audioTest.getTracks().forEach(function(t) { t.stop(); });
+        results.audio = true;
+    } catch (err) {
+        console.warn('Audio test failed:', err);
+    }
+    
+    if (state.videoEnabled) {
+        try {
+            var videoTest = await navigator.mediaDevices.getUserMedia({ 
+                audio: false, 
+                video: getVideoConstraints() 
+            });
+            videoTest.getTracks().forEach(function(t) { t.stop(); });
+            results.video = true;
+        } catch (err) {
+            console.warn('Video test failed:', err);
+        }
+    }
+    
+    return results;
+}
+
+function getAudioConstraints() {
+    return {
+        echoCancellation: deviceSettings.echoCancellation,
+        noiseSuppression: deviceSettings.noiseSuppression,
+        autoGainControl: deviceSettings.autoGainControl,
+        sampleRate: 48000,
+        channelCount: 1,
+        deviceId: deviceSettings.microphone ? { exact: deviceSettings.microphone } : undefined
+    };
+}
+
+function getVideoConstraints() {
+    var quality = deviceSettings.videoQuality.split('x');
+    return {
+        width: { ideal: parseInt(quality[0]) },
+        height: { ideal: parseInt(quality[1]) },
+        frameRate: { ideal: deviceSettings.frameRate },
+        facingMode: 'user',
+        deviceId: deviceSettings.camera ? { exact: deviceSettings.camera } : undefined
+    };
+}
+
+function applyAudioOutput(deviceId) {
+    var audioElements = document.querySelectorAll('audio');
+    audioElements.forEach(function(audio) {
+        if (audio.setSinkId) {
+            audio.setSinkId(deviceId).catch(function(err) {
+                console.error('setSinkId failed:', err);
+            });
+        }
+    });
+}
+
+// ==================== END CALL ====================
+async function endCall() {
+    console.log('📞 Ending call...');
+    
+    // Notify remote
+    if (state.socket && state.targetId) {
+        state.socket.emit('signal', {
+            to: state.targetId,
+            from: state.myId,
+            type: 'hangup'
+        });
+    }
+    
+    cleanupCall();
+    showNotification('Call Ended', 'Call duration: ' + getCallDuration());
+}
+
+function cleanupCall() {
+    state.inCall = false;
+    state.isInitiator = false;
+    state.callStartTime = null;
+    
+    // Stop stats
+    if (state.statsInterval) {
+        clearInterval(state.statsInterval);
+        state.statsInterval = null;
+    }
+    
+    // Close peer connection
+    if (state.peerConnection) {
+        state.peerConnection.close();
+        state.peerConnection = null;
+    }
+    
+    // Stop streams
+    if (state.localStream) {
+        state.localStream.getTracks().forEach(function(track) { track.stop(); });
+        state.localStream = null;
+    }
+    
+    if (state.remoteStream) {
+        state.remoteStream.getTracks().forEach(function(track) { track.stop(); });
+        state.remoteStream = null;
+    }
+    
+    // Hide video
+    var localVideo = document.getElementById('localVideo');
+    var remoteVideo = document.getElementById('remoteVideo');
+    var videoContainer = document.getElementById('videoContainer');
+    
+    if (localVideo) { localVideo.srcObject = null; localVideo.style.display = 'none'; }
+    if (remoteVideo) { remoteVideo.srcObject = null; remoteVideo.style.display = 'none'; }
+    if (videoContainer && !state.videoEnabled) videoContainer.style.display = 'none';
+    
+    setCallUI(false);
+}
+
+function handleRemoteHangup() {
+    showNotification('Call Ended', 'Remote user hung up');
+    cleanupCall();
+}
+
+function handleDisconnect() {
+    if (state.inCall && state.reconnectAttempts < CONFIG.maxRetries) {
+        state.reconnectAttempts++;
+        console.log('Attempting reconnect...', state.reconnectAttempts);
+        setTimeout(function() {
+            if (state.isInitiator) {
+                startCall();
+            }
+        }, CONFIG.retryDelay);
+    }
+}
+
+function handleConnectionFailed() {
+    console.error('Connection failed');
+    showNotification('Connection Failed', 'Could not establish connection');
+    cleanupCall();
+}
+
+// ==================== UI UPDATES ====================
+function setCallUI(inCall) {
+    var callBtn = document.getElementById('callBtn');
+    var callLbl = document.getElementById('callLbl');
+    var statsPanel = document.getElementById('connectionStats');
+    
+    if (callBtn) {
+        callBtn.classList.toggle('in-call', inCall);
+    }
+    if (callLbl) {
+        callLbl.textContent = inCall ? 'Hang Up' : 'Call';
+    }
+    if (statsPanel) {
+        statsPanel.style.display = inCall ? 'flex' : 'none';
+    }
+}
+
+function getCallDuration() {
+    if (!state.callStartTime) return '0:00';
+    var diff = Math.floor((Date.now() - state.callStartTime) / 1000);
+    var mins = Math.floor(diff / 60);
+    var secs = diff % 60;
+    return mins + ':' + (secs < 10 ? '0' : '') + secs;
+}
+
+// ==================== STATS ====================
+function startStatsUpdate() {
+    if (state.statsInterval) clearInterval(state.statsInterval);
+    
+    state.statsInterval = setInterval(async function() {
+        if (!state.peerConnection || !state.inCall) return;
+        
+        try {
+            var stats = await state.peerConnection.getStats();
+            var statsData = { ping: '--', bitrate: '--', loss: '0', codec: 'Opus' };
+            
+            stats.forEach(function(report) {
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    if (report.currentRoundTripTime) {
+                        statsData.ping = Math.round(report.currentRoundTripTime * 1000);
+                    }
+                }
+                
+                if (report.type === 'outbound-rtp' && report.kind === 'audio') {
+                    if (report.targetBitrate) {
+                        statsData.bitrate = Math.round(report.targetBitrate / 1000);
+                    }
+                    if (report.packetsLost !== undefined && report.packetsSent) {
+                        var total = report.packetsSent + report.packetsLost;
+                        statsData.loss = ((report.packetsLost / total) * 100).toFixed(1);
+                    }
+                    if (report.codecId) {
+                        var codec = stats.get(report.codecId);
+                        if (codec) statsData.codec = codec.mimeType?.split('/')[1] || 'Opus';
+                    }
+                }
+            });
+            
+            updateStatsDisplay(statsData);
+            
+        } catch (err) {
+            console.error('Stats error:', err);
+        }
+    }, 2000);
+}
+
+function updateStatsDisplay(data) {
+    var pingEl = document.getElementById('statPing');
+    var bitrateEl = document.getElementById('statBitrate');
+    var lossEl = document.getElementById('statLoss');
+    var codecEl = document.getElementById('statCodec');
+    
+    if (pingEl) pingEl.textContent = data.ping + 'ms';
+    if (bitrateEl) bitrateEl.textContent = data.bitrate + 'kbps';
+    if (lossEl) lossEl.textContent = data.loss + '%';
+    if (codecEl) codecEl.textContent = data.codec;
+}
+
+// ==================== CHAT ====================
+window.sendChatMessage = function() {
+    var input = document.getElementById('chatInput');
+    var messages = document.getElementById('chatMessages');
+    var chatSection = document.getElementById('chatSection');
+    
+    if (!input || !messages) return;
+    
+    var text = input.value.trim();
+    if (!text) return;
+    
+    // Show chat
+    if (chatSection) chatSection.style.display = 'block';
+    
+    // Add message
+    var msg = document.createElement('div');
+    msg.className = 'nvx-chat-message';
+    msg.innerHTML = '<strong>You:</strong> ' + escapeHtml(text);
+    messages.appendChild(msg);
+    messages.scrollTop = messages.scrollHeight;
+    
+    // Send
+    if (state.socket && state.targetId) {
+        state.socket.emit('signal', {
+            to: state.targetId,
+            from: state.myId,
+            type: 'chat',
+            text: text
+        });
+    }
+    
+    input.value = '';
+};
+
+function handleChatMessage(data) {
+    var messages = document.getElementById('chatMessages');
+    var chatSection = document.getElementById('chatSection');
+    
+    if (chatSection) chatSection.style.display = 'block';
+    
+    if (messages) {
+        var msg = document.createElement('div');
+        msg.className = 'nvx-chat-message remote';
+        msg.innerHTML = '<strong>' + escapeHtml(data.from) + ':</strong> ' + escapeHtml(data.text);
+        messages.appendChild(msg);
+        messages.scrollTop = messages.scrollHeight;
+    }
+}
+
+// ==================== CONTACTS ====================
 var contacts = [];
 
 function loadContacts() {
@@ -776,140 +887,65 @@ function renderContacts() {
     
     list.innerHTML = '';
     
+    if (contacts.length === 0) {
+        list.innerHTML = '<div class="nvx-contact-item"><span class="nvx-contact-name">No contacts. Click + to add.</span></div>';
+        return;
+    }
+    
     contacts.forEach(function(contact) {
         var item = document.createElement('div');
         item.className = 'nvx-contact-item';
         item.setAttribute('data-id', contact.id);
         item.innerHTML = 
             '<div class="nvx-contact-status ' + (contact.online ? 'online' : 'offline') + '"></div>' +
-            '<span class="nvx-contact-name">' + contact.name + ' (#' + contact.id + ')</span>' +
+            '<span class="nvx-contact-name">' + escapeHtml(contact.name) + '</span>' +
+            '<span class="nvx-contact-id">#' + contact.id + '</span>' +
             '<button class="nvx-contact-call" onclick="callContact(\'' + contact.id + '\')">' +
-            '<i class="fa-solid fa-phone"></i>' +
-            '</button>';
+            '<i class="fa-solid fa-phone"></i></button>';
         list.appendChild(item);
     });
-    
-    if (contacts.length === 0) {
-        list.innerHTML = '<div class="nvx-contact-item"><span class="nvx-contact-name">No contacts yet</span></div>';
-    }
 }
 
 window.addContact = function() {
     var friendInput = document.getElementById('friendIdInput');
-    var friendId = friendInput ? friendInput.value : prompt('Enter friend ID:');
+    var friendId = friendInput?.value?.trim();
     
-    if (!friendId || friendId.trim() === '') return;
+    if (!friendId) {
+        alert('Enter Friend ID first!');
+        return;
+    }
     
-    var name = prompt('Enter contact name:', 'Friend #' + friendId);
+    var name = prompt('Contact name:', 'Friend');
     if (!name) return;
     
-    // Check if already exists
-    if (contacts.find(c => c.id === friendId)) {
+    if (contacts.find(function(c) { return c.id === friendId; })) {
         alert('Contact already exists!');
         return;
     }
     
-    contacts.push({
-        id: friendId,
-        name: name,
-        online: false,
-        lastSeen: null
-    });
-    
+    contacts.push({ id: friendId, name: name, online: false });
     saveContacts();
     renderContacts();
-    console.log('Contact added:', friendId);
+    
+    showNotification('Contact Added', name + ' #' + friendId);
 };
 
 window.callContact = function(contactId) {
     var friendInput = document.getElementById('friendIdInput');
     if (friendInput) friendInput.value = contactId;
+    state.targetId = contactId;
     
-    targetId = contactId;
-    
-    if (!socket) initConnection();
-    startCall();
+    if (!state.socket) initConnection();
+    startCallWithChecks();
 };
 
-// ==================== SETTINGS FUNCTIONS ====================
-var settings = {
-    echoCancellation: true,
-    noiseSuppression: true,
-    videoPreview: false,
-    autoAnswer: false
-};
-
-function loadSettings() {
-    var saved = localStorage.getItem('nevax_settings');
-    if (saved) {
-        settings = JSON.parse(saved);
-        applySettings();
+function updateContactStatus(id, status) {
+    var contact = contacts.find(function(c) { return c.id === id; });
+    if (contact) {
+        contact.online = status === 'online';
+        renderContacts();
     }
 }
-
-function saveSettings() {
-    localStorage.setItem('nevax_settings', JSON.stringify(settings));
-}
-
-function applySettings() {
-    var echoCheck = document.getElementById('settingEcho');
-    var noiseCheck = document.getElementById('settingNoise');
-    var videoCheck = document.getElementById('settingVideoPreview');
-    var autoAnswerCheck = document.getElementById('settingAutoAnswer');
-    
-    if (echoCheck) echoCheck.checked = settings.echoCancellation;
-    if (noiseCheck) noiseCheck.checked = settings.noiseSuppression;
-    if (videoCheck) videoCheck.checked = settings.videoPreview;
-    if (autoAnswerCheck) autoAnswerCheck.checked = settings.autoAnswer;
-}
-
-window.toggleSettings = function() {
-    var panel = document.getElementById('settingsPanel');
-    if (panel) {
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    }
-};
-
-// Settings change handlers
-document.addEventListener('DOMContentLoaded', function() {
-    var echoCheck = document.getElementById('settingEcho');
-    var noiseCheck = document.getElementById('settingNoise');
-    var videoCheck = document.getElementById('settingVideoPreview');
-    var autoAnswerCheck = document.getElementById('settingAutoAnswer');
-    
-    if (echoCheck) {
-        echoCheck.addEventListener('change', function() {
-            settings.echoCancellation = this.checked;
-            saveSettings();
-        });
-    }
-    
-    if (noiseCheck) {
-        noiseCheck.addEventListener('change', function() {
-            settings.noiseSuppression = this.checked;
-            saveSettings();
-        });
-    }
-    
-    if (videoCheck) {
-        videoCheck.addEventListener('change', function() {
-            settings.videoPreview = this.checked;
-            if (this.checked && !videoEnabled) {
-                toggleVideo();
-            } else if (!this.checked && videoEnabled) {
-                toggleVideo();
-            }
-            saveSettings();
-        });
-    }
-    
-    if (autoAnswerCheck) {
-        autoAnswerCheck.addEventListener('change', function() {
-            settings.autoAnswer = this.checked;
-            saveSettings();
-        });
-    }
-});
 
 // ==================== CALL HISTORY ====================
 var callHistory = [];
@@ -923,7 +959,7 @@ function loadCallHistory() {
 }
 
 function saveCallHistory() {
-    localStorage.setItem('nevax_call_history', JSON.stringify(callHistory));
+    localStorage.setItem('nevax_call_history', JSON.stringify(callHistory.slice(-50)));
 }
 
 function renderCallHistory() {
@@ -936,151 +972,305 @@ function renderCallHistory() {
     }
     
     list.innerHTML = '';
-    
-    // Show last 10 calls
     callHistory.slice(-10).reverse().forEach(function(call) {
         var item = document.createElement('div');
-        item.className = 'nvx-history-item ' + (call.missed ? 'missed' : call.type);
+        item.className = 'nvx-history-item ' + call.type + (call.missed ? ' missed' : '');
         
         var date = new Date(call.time);
         var timeStr = date.getHours() + ':' + String(date.getMinutes()).padStart(2, '0');
         
         item.innerHTML = 
-            '<span>' + call.contactName + ' (#' + call.contactId + ')</span>' +
+            '<span>' + escapeHtml(call.contactName) + ' #' + call.contactId + '</span>' +
             '<span>' + timeStr + '</span>';
-        
         list.appendChild(item);
     });
 }
 
-function addCallToHistory(contactId, contactName, type, missed) {
+function addCallToHistory(contactId, type, missed) {
+    var contact = contacts.find(function(c) { return c.id === contactId; });
+    var contactName = contact ? contact.name : 'Unknown';
+    
     callHistory.push({
         contactId: contactId,
         contactName: contactName,
-        type: type, // 'incoming', 'outgoing'
+        type: type,
         missed: missed,
         time: Date.now()
     });
-    
-    // Keep only last 50 calls
-    if (callHistory.length > 50) {
-        callHistory = callHistory.slice(-50);
-    }
     
     saveCallHistory();
     renderCallHistory();
 }
 
-// Update call history on connect/disconnect
-var originalStartCall = startCall;
-startCall = async function() {
-    var friendInput = document.getElementById('friendIdInput');
-    var target = friendInput ? friendInput.value : targetId;
-    
-    addCallToHistory(target, 'Friend #' + target, 'outgoing', false);
-    return originalStartCall();
-};
-
-// ==================== CHAT FUNCTIONS ====================
-window.sendChatMessage = function() {
-    var input = document.getElementById('chatInput');
-    var messages = document.getElementById('chatMessages');
-    
-    if (!input || !messages) return;
-    
-    var text = input.value.trim();
-    if (!text) return;
-    
-    // Add to UI
-    var msg = document.createElement('div');
-    msg.className = 'nvx-chat-message';
-    msg.textContent = 'You: ' + text;
-    messages.appendChild(msg);
-    messages.scrollTop = messages.scrollHeight;
-    
-    // Send via socket
-    if (socket && targetId) {
-        socket.emit('signal', {
-            to: targetId,
-            from: myId,
-            type: 'chat',
-            text: text
-        });
+// ==================== SETTINGS ====================
+function loadSettings() {
+    var saved = localStorage.getItem('nevax_settings');
+    if (saved) {
+        deviceSettings = JSON.parse(saved);
+        applySettingsToUI();
     }
     
-    input.value = '';
+    // Load devices
+    var savedDevices = localStorage.getItem('nevax_devices');
+    if (savedDevices) {
+        var devices = JSON.parse(savedDevices);
+        deviceSettings.microphone = devices.microphone || '';
+        deviceSettings.camera = devices.camera || '';
+        deviceSettings.audioOutput = devices.audioOutput || '';
+    }
+}
+
+function applySettingsToUI() {
+    var echoCheck = document.getElementById('settingEcho');
+    var noiseCheck = document.getElementById('settingNoise');
+    var agcCheck = document.getElementById('settingAGC');
+    var autoAnswerCheck = document.getElementById('settingAutoAnswer');
+    var videoPreviewCheck = document.getElementById('settingVideoPreview');
+    var ringVolume = document.getElementById('ringVolume');
+    var ringVolumeValue = document.getElementById('ringVolumeValue');
+    
+    if (echoCheck) echoCheck.checked = deviceSettings.echoCancellation;
+    if (noiseCheck) noiseCheck.checked = deviceSettings.noiseSuppression;
+    if (agcCheck) agcCheck.checked = deviceSettings.autoGainControl;
+    if (autoAnswerCheck) autoAnswerCheck.checked = deviceSettings.autoAnswer || false;
+    if (videoPreviewCheck) videoPreviewCheck.checked = deviceSettings.videoPreview || false;
+    if (ringVolume) ringVolume.value = deviceSettings.ringVolume || 80;
+    if (ringVolumeValue) ringVolumeValue.textContent = (deviceSettings.ringVolume || 80) + '%';
+}
+
+window.saveAllSettings = function() {
+    // Get values from UI
+    var echoCheck = document.getElementById('settingEcho');
+    var noiseCheck = document.getElementById('settingNoise');
+    var agcCheck = document.getElementById('settingAGC');
+    var autoAnswerCheck = document.getElementById('settingAutoAnswer');
+    var videoPreviewCheck = document.getElementById('settingVideoPreview');
+    var micSelect = document.getElementById('micSelect');
+    var cameraSelect = document.getElementById('cameraSelect');
+    var audioOutputSelect = document.getElementById('audioOutputSelect');
+    var ringVolume = document.getElementById('ringVolume');
+    
+    deviceSettings.echoCancellation = echoCheck?.checked ?? true;
+    deviceSettings.noiseSuppression = noiseCheck?.checked ?? true;
+    deviceSettings.autoGainControl = agcCheck?.checked ?? true;
+    deviceSettings.autoAnswer = autoAnswerCheck?.checked ?? false;
+    deviceSettings.videoPreview = videoPreviewCheck?.checked ?? false;
+    deviceSettings.microphone = micSelect?.value || '';
+    deviceSettings.camera = cameraSelect?.value || '';
+    deviceSettings.audioOutput = audioOutputSelect?.value || '';
+    deviceSettings.ringVolume = ringVolume?.value || 80;
+    
+    // Save
+    localStorage.setItem('nevax_settings', JSON.stringify(deviceSettings));
+    localStorage.setItem('nevax_devices', JSON.stringify({
+        microphone: deviceSettings.microphone,
+        camera: deviceSettings.camera,
+        audioOutput: deviceSettings.audioOutput
+    }));
+    
+    showNotification('Settings Saved', 'All preferences saved');
 };
 
-// Handle Enter key in chat
-document.addEventListener('DOMContentLoaded', function() {
+window.toggleSettings = function() {
+    var panel = document.getElementById('settingsPanel');
+    if (panel) {
+        var isHidden = panel.style.display === 'none';
+        panel.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) {
+            enumerateDevices();
+            loadSettings();
+        }
+    }
+};
+
+// ==================== TEST FUNCTIONS ====================
+window.testMicrophone = async function() {
+    var btn = document.querySelector('#micSelect + .nvx-setting-test') || 
+              document.querySelector('button[onclick="testMicrophone()"]');
+    
+    if (btn?.classList.contains('testing')) {
+        // Stop test
+        if (window._testMicStream) {
+            window._testMicStream.getTracks().forEach(function(t) { t.stop(); });
+            window._testMicStream = null;
+        }
+        if (window._testMicInterval) {
+            clearInterval(window._testMicInterval);
+            window._testMicInterval = null;
+        }
+        btn.classList.remove('testing');
+        btn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i> Test';
+        return;
+    }
+    
+    try {
+        var stream = await navigator.mediaDevices.getUserMedia({
+            audio: getAudioConstraints(),
+            video: false
+        });
+        window._testMicStream = stream;
+        
+        // Visual feedback
+        var AudioContext = window.AudioContext || window.webkitAudioContext;
+        var audioCtx = new AudioContext();
+        var analyser = audioCtx.createAnalyser();
+        var source = audioCtx.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        
+        var dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        window._testMicInterval = setInterval(function() {
+            analyser.getByteFrequencyData(dataArray);
+            var average = dataArray.reduce(function(a, b) { return a + b; }) / dataArray.length;
+            if (btn) {
+                btn.style.opacity = 0.3 + (average / 255) * 0.7;
+            }
+        }, 50);
+        
+        btn?.classList.add('testing');
+        btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+        
+        showNotification('Microphone Test', 'Speak to see activity');
+        
+    } catch (err) {
+        alert('❌ Microphone test failed: ' + err.message);
+    }
+};
+
+window.testCamera = async function() {
+    var btn = document.querySelector('#cameraSelect + .nvx-setting-test') ||
+              document.querySelector('button[onclick="testCamera()"]');
+    
+    if (state.videoEnabled) {
+        await window.toggleVideo();
+        btn?.classList.remove('testing');
+        btn.innerHTML = '<i class="fa-solid fa-video"></i> Test';
+        return;
+    }
+    
+    try {
+        await window.toggleVideo();
+        btn?.classList.add('testing');
+        btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+        showNotification('Camera Test', 'Camera preview active');
+    } catch (err) {
+        alert('❌ Camera test failed: ' + err.message);
+    }
+};
+
+// ==================== UTILITIES ====================
+function delay(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showNotification(title, body) {
+    console.log('[' + title + ']', body);
+    
+    // Custom notification element
+    var notif = document.getElementById('nvx-notification');
+    if (!notif) {
+        notif = document.createElement('div');
+        notif.id = 'nvx-notification';
+        notif.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);background:#00ff00;color:#000;padding:10px 20px;border-radius:0;z-index:1000;font-size:12px;box-shadow:0 0 20px #00ff00;';
+        document.body.appendChild(notif);
+    }
+    
+    notif.innerHTML = '<strong>' + title + '</strong><br>' + body;
+    notif.style.display = 'block';
+    
+    setTimeout(function() {
+        notif.style.display = 'none';
+    }, 3000);
+}
+
+function setupEventListeners() {
+    // Chat input
     var chatInput = document.getElementById('chatInput');
     if (chatInput) {
         chatInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendChatMessage();
-            }
+            if (e.key === 'Enter') window.sendChatMessage();
         });
     }
-});
+    
+    // Ring volume
+    var ringVolume = document.getElementById('ringVolume');
+    var ringVolumeValue = document.getElementById('ringVolumeValue');
+    if (ringVolume && ringVolumeValue) {
+        ringVolume.addEventListener('input', function() {
+            ringVolumeValue.textContent = this.value + '%';
+        });
+    }
+    
+    // Device selects
+    var micSelect = document.getElementById('micSelect');
+    var cameraSelect = document.getElementById('cameraSelect');
+    var audioOutputSelect = document.getElementById('audioOutputSelect');
+    
+    if (micSelect) {
+        micSelect.addEventListener('change', function() {
+            deviceSettings.microphone = this.value;
+        });
+    }
+    if (cameraSelect) {
+        cameraSelect.addEventListener('change', function() {
+            deviceSettings.camera = this.value;
+        });
+    }
+    if (audioOutputSelect) {
+        audioOutputSelect.addEventListener('change', function() {
+            deviceSettings.audioOutput = this.value;
+            applyAudioOutput(this.value);
+        });
+    }
+}
 
-// Handle incoming chat messages
-var originalHandleSignal = handleSignal;
-handleSignal = async function(data) {
-    if (data.type === 'chat') {
-        var messages = document.getElementById('chatMessages');
-        if (messages) {
-            var msg = document.createElement('div');
-            msg.className = 'nvx-chat-message';
-            msg.textContent = 'Friend: ' + data.text;
-            messages.appendChild(msg);
-            messages.scrollTop = messages.scrollHeight;
+function waitForIceGathering() {
+    return new Promise(function(resolve) {
+        if (!state.peerConnection || state.peerConnection.iceGatheringState === 'complete') {
+            resolve();
+            return;
         }
-        return;
-    }
-    
-    // Handle incoming call for auto-answer
-    if (data.type === 'offer' && settings.autoAnswer) {
-        console.log('Auto-answering call...');
-    }
-    
-    return originalHandleSignal(data);
-};
-
-// ==================== STATS UPDATE ====================
-function updateConnectionStats() {
-    if (!peerConnection || !inCall) {
-        document.getElementById('connectionStats').style.display = 'none';
-        return;
-    }
-    
-    document.getElementById('connectionStats').style.display = 'flex';
-    
-    peerConnection.getStats().then(function(stats) {
-        stats.forEach(function(report) {
-            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                // Round trip time
-                if (report.currentRoundTripTime) {
-                    var ping = Math.round(report.currentRoundTripTime * 1000);
-                    document.getElementById('statPing').textContent = ping;
-                }
+        
+        var checkState = function() {
+            if (state.peerConnection.iceGatheringState === 'complete') {
+                state.peerConnection.removeEventListener('icegatheringstatechange', checkState);
+                resolve();
             }
-            
-            if (report.type === 'outbound-rtp' && report.kind === 'audio') {
-                // Bitrate
-                if (report.targetBitrate) {
-                    var bitrate = Math.round(report.targetBitrate / 1000);
-                    document.getElementById('statBitrate').textContent = bitrate;
-                }
-                
-                // Packet loss
-                if (report.packetsLost !== undefined && report.packetsSent) {
-                    var loss = ((report.packetsLost / (report.packetsSent + report.packetsLost)) * 100).toFixed(1);
-                    document.getElementById('statLoss').textContent = loss;
-                }
-            }
-        });
+        };
+        
+        state.peerConnection.addEventListener('icegatheringstatechange', checkState);
+        setTimeout(resolve, 3000); // Timeout fallback
     });
 }
 
-// Update stats every 2 seconds
-setInterval(updateConnectionStats, 2000);
+// Handle mute
+window.handleMute = function(e) {
+    if (e) e.stopPropagation();
+    
+    if (!state.localStream) return;
+    
+    var audioTracks = state.localStream.getAudioTracks();
+    var isMuted = false;
+    
+    audioTracks.forEach(function(track) {
+        track.enabled = !track.enabled;
+        isMuted = !track.enabled;
+    });
+    
+    var muteBtn = document.getElementById('muteBtn');
+    var muteLbl = document.getElementById('muteLbl');
+    
+    if (muteBtn) muteBtn.classList.toggle('active', isMuted);
+    if (muteLbl) muteLbl.textContent = isMuted ? 'Unmute' : 'Mute';
+    
+    showNotification(isMuted ? 'Muted' : 'Unmuted', 'Microphone ' + (isMuted ? 'off' : 'on'));
+};
+
+console.log('✅ Nevax WebRTC loaded successfully');
