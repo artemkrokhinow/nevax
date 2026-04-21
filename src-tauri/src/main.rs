@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::State;
 
 // ===== SYSTEM COMMANDS =====
 
@@ -89,13 +89,13 @@ fn file_exists(path: String) -> bool {
 }
 
 #[tauri::command]
-fn get_app_data_dir(app_handle: tauri::AppHandle) -> PathBuf {
-    app_handle.path_resolver().app_data_dir().unwrap_or_else(|| PathBuf::from("."))
+fn get_app_data_dir() -> PathBuf {
+    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("nevax")
 }
 
 #[tauri::command]
-fn get_config_dir(app_handle: tauri::AppHandle) -> PathBuf {
-    app_handle.path_resolver().app_config_dir().unwrap_or_else(|| PathBuf::from("."))
+fn get_config_dir() -> PathBuf {
+    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("nevax")
 }
 
 // ===== SYSTEM INFORMATION =====
