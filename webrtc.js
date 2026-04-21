@@ -1795,4 +1795,50 @@ window.handleMute = function(e) {
     showNotification(isMuted ? 'Muted' : 'Unmuted', 'Microphone ' + (isMuted ? 'off' : 'on'));
 };
 
+// Toggle video
+window.toggleVideo = function(e) {
+    if (e) e.stopPropagation();
+    
+    state.videoEnabled = !state.videoEnabled;
+    
+    var videoBtn = document.getElementById('videoBtn');
+    if (videoBtn) videoBtn.classList.toggle('active', state.videoEnabled);
+    
+    if (state.videoEnabled) {
+        showNotification('Video Enabled', 'Camera will be used in calls');
+    } else {
+        showNotification('Video Disabled', 'Audio-only mode');
+    }
+};
+
+// Add contact
+window.addContact = function() {
+    var nameInput = document.getElementById('newContactName');
+    var idInput = document.getElementById('newContactId');
+    
+    if (!nameInput || !idInput) {
+        showNotification('Error', 'Contact input fields not found');
+        return;
+    }
+    
+    var name = nameInput.value.trim();
+    var id = idInput.value.trim();
+    
+    if (!name || !id) {
+        showNotification('Error', 'Please enter name and ID');
+        return;
+    }
+    
+    var contacts = JSON.parse(localStorage.getItem('nevax_contacts') || '[]');
+    contacts.push({ id: id, name: name, status: 'offline' });
+    localStorage.setItem('nevax_contacts', JSON.stringify(contacts));
+    
+    loadContacts();
+    
+    if (nameInput) nameInput.value = '';
+    if (idInput) idInput.value = '';
+    
+    showNotification('Contact Added', name + ' added to contacts');
+};
+
 console.log('✅ Nevax WebRTC loaded successfully');
