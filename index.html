@@ -833,6 +833,20 @@
             box-shadow: 0 0 20px rgba(0, 170, 255, 0.5);
         }
 
+        /* Test Button */
+        .nvx-btn.test {
+            border-color: #ffaa00;
+            color: #ffaa00;
+        }
+        .nvx-btn.test:hover {
+            background: linear-gradient(135deg, #331a00 0%, #663300 50%, #331a00 100%);
+            box-shadow: 0 0 20px rgba(255, 170, 0, 0.5);
+        }
+        .nvx-btn.test.active {
+            background: linear-gradient(135deg, #331a00 0%, #663300 50%, #331a00 100%);
+            box-shadow: 0 0 20px rgba(255, 170, 0, 0.8);
+        }
+
         /* Button Labels */
         .nvx-btn-label {
             font-size: 10px;
@@ -1067,7 +1081,11 @@
             width: 16px;
             height: 16px;
             accent-color: #00ff00;
-            cursor: pointer;
+        }
+        .nvx-setting-label input[type="radio"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #00ff00;
         }
         .nvx-settings-toggle {
             width: 100%;
@@ -1085,6 +1103,81 @@
         .nvx-settings-toggle:hover {
             background: linear-gradient(135deg, #003300 0%, #001a00 50%, #003300 100%);
             box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+        }
+
+        /* Console Panel */
+        .nvx-console-section {
+            margin-top: 14px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #000000 50%, #0a0a0a 100%);
+            border: 2px solid #00ff00;
+            clip-path: polygon(1% 0%, 99% 2%, 100% 95%, 98% 100%, 2% 98%, 0% 5%);
+        }
+        .nvx-console-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 14px;
+            background: linear-gradient(90deg, #001100, #003300);
+            border-bottom: 1px solid #00ff00;
+        }
+        .nvx-console-title {
+            color: #00ff00;
+            font-size: 11px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nvx-console-controls {
+            display: flex;
+            gap: 8px;
+        }
+        .nvx-console-btn {
+            padding: 4px 10px;
+            background: #001100;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-size: 10px;
+            cursor: pointer;
+            font-family: 'Syne', sans-serif;
+        }
+        .nvx-console-btn:hover {
+            background: #003300;
+        }
+        .nvx-console-content {
+            height: 120px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            line-height: 1.4;
+            color: #00ff00;
+        }
+        .nvx-console-line {
+            padding: 2px 0;
+            border-bottom: 1px dotted #003300;
+        }
+        .nvx-console-line.error {
+            color: #ff0000;
+        }
+        .nvx-console-line.warn {
+            color: #ffaa00;
+        }
+        .nvx-console-line.info {
+            color: #00aaff;
+        }
+        .nvx-console-line.success {
+            color: #00ff00;
+        }
+        .nvx-console-timestamp {
+            color: #00aa00;
+            margin-right: 8px;
+        }
+        .nvx-console-section.minimized .nvx-console-content {
+            display: none;
+        }
+        .nvx-console-section.minimized {
+            clip-path: polygon(1% 0%, 99% 2%, 100% 100%, 98% 100%, 2% 98%, 0% 5%);
         }
 
     </style>
@@ -1245,6 +1338,34 @@
             
             <div class="nvx-settings-divider"></div>
             
+            <div class="nvx-section-title">Connection Mode (Auto-Fallback)</div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="radio" name="connectionMode" id="modeMinimalist" value="udp" />
+                    <strong>1. Minimalist</strong> (UDP + Opus) - Fastest, 10-15 MB RAM
+                </label>
+            </div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="radio" name="connectionMode" id="modeModern" value="quic" checked />
+                    <strong>2. Modern Standard</strong> (QUIC + Opus) - Reliable, Wi-Fi/Mobile
+                </label>
+            </div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="radio" name="connectionMode" id="modePuncher" value="webrtc" />
+                    <strong>3. NAT Puncher</strong> (WebRTC + libp2p) - Works everywhere
+                </label>
+            </div>
+            <div class="nvx-setting-item">
+                <label class="nvx-setting-label">
+                    <input type="checkbox" id="settingAutoFallback" checked />
+                    Auto-fallback if connection fails
+                </label>
+            </div>
+            
+            <div class="nvx-settings-divider"></div>
+            
             <div class="nvx-settings-buttons">
                 <button class="nvx-settings-btn refresh" onclick="refreshDevices()">
                     <i class="fa-solid fa-rotate"></i> Refresh Devices
@@ -1264,6 +1385,12 @@
                     <i class="fa-solid fa-phone"></i>
                 </button>
                 <span class="nvx-btn-label" id="callLbl">Call</span>
+            </div>
+            <div class="nvx-control-wrapper">
+                <button class="nvx-btn test" id="testBtn" onclick="testConnection(event)" title="Test Call - Call yourself to check if everything works">
+                    <i class="fa-solid fa-vial"></i>
+                </button>
+                <span class="nvx-btn-label">Test</span>
             </div>
             <div class="nvx-control-wrapper">
                 <button class="nvx-btn" id="muteBtn" onclick="handleMute(event)">
@@ -1530,5 +1657,175 @@
     </script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="webrtc.js"></script>
+
+    <!-- Console Panel -->
+    <div class="nvx-console-section" id="consoleSection">
+        <div class="nvx-console-header">
+            <div class="nvx-console-title">
+                <i class="fa-solid fa-terminal"></i> System Console
+            </div>
+            <div class="nvx-console-controls">
+                <button class="nvx-console-btn" onclick="clearConsole()">Clear</button>
+                <button class="nvx-console-btn" onclick="toggleConsole()">Minimize</button>
+            </div>
+        </div>
+        <div class="nvx-console-content" id="consoleContent">
+            <div class="nvx-console-line success"><span class="nvx-console-timestamp">[START]</span> Console initialized. Ready for logs...</div>
+        </div>
+    </div>
+
+    <script>
+        // Console capture system
+        (function() {
+            var consoleContent = document.getElementById('consoleContent');
+            var maxLines = 100;
+            
+            function addToConsole(type, args) {
+                if (!consoleContent) return;
+                
+                var line = document.createElement('div');
+                line.className = 'nvx-console-line ' + type;
+                
+                var timestamp = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                var message = Array.from(args).map(function(arg) {
+                    if (typeof arg === 'object') {
+                        try {
+                            return JSON.stringify(arg, null, 2);
+                        } catch (e) {
+                            return String(arg);
+                        }
+                    }
+                    return String(arg);
+                }).join(' ');
+                
+                line.innerHTML = '<span class="nvx-console-timestamp">[' + timestamp + ']</span> ' + escapeHtml(message);
+                consoleContent.appendChild(line);
+                
+                // Limit lines
+                while (consoleContent.children.length > maxLines) {
+                    consoleContent.removeChild(consoleContent.firstChild);
+                }
+                
+                // Auto-scroll
+                consoleContent.scrollTop = consoleContent.scrollHeight;
+            }
+            
+            function escapeHtml(text) {
+                var div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            // Override console methods
+            var originalLog = console.log;
+            var originalError = console.error;
+            var originalWarn = console.warn;
+            var originalInfo = console.info;
+            
+            console.log = function() {
+                addToConsole('success', arguments);
+                originalLog.apply(console, arguments);
+            };
+            
+            console.error = function() {
+                addToConsole('error', arguments);
+                originalError.apply(console, arguments);
+            };
+            
+            console.warn = function() {
+                addToConsole('warn', arguments);
+                originalWarn.apply(console, arguments);
+            };
+            
+            console.info = function() {
+                addToConsole('info', arguments);
+                originalInfo.apply(console, arguments);
+            };
+            
+            // Global error handler
+            window.onerror = function(msg, url, line, col, error) {
+                console.error('ERROR: ' + msg + ' at ' + url + ':' + line + ':' + col);
+                return false;
+            };
+            
+            window.onunhandledrejection = function(event) {
+                console.error('UNHANDLED PROMISE REJECTION:', event.reason);
+            };
+        })();
+        
+        function clearConsole() {
+            var content = document.getElementById('consoleContent');
+            if (content) {
+                content.innerHTML = '<div class="nvx-console-line success"><span class="nvx-console-timestamp">[CLEARED]</span> Console cleared.</div>';
+            }
+        }
+        
+        function toggleConsole() {
+            var section = document.getElementById('consoleSection');
+            if (section) {
+                section.classList.toggle('minimized');
+            }
+        }
+        
+        console.log('✅ Console system loaded');
+    </script>
+
+    <script>
+        // Core WebRTC functions - loaded inline to ensure availability
+        window.callContact = function(contactId) {
+            console.log('📞 Calling contact:', contactId);
+            var friendInput = document.querySelector('input[value="2"]');
+            if (friendInput) friendInput.value = contactId;
+            if (typeof state !== 'undefined') state.targetId = contactId;
+            if (typeof initConnection === 'function' && (!state || !state.socket)) initConnection();
+            if (typeof startCallWithChecks === 'function') startCallWithChecks();
+        };
+
+        window.toggleVideo = function(e) {
+            if (e) e.stopPropagation();
+            if (typeof state !== 'undefined') {
+                state.videoEnabled = !state.videoEnabled;
+                var videoBtn = document.getElementById('videoBtn');
+                if (videoBtn) videoBtn.classList.toggle('active', state.videoEnabled);
+                showNotification(state.videoEnabled ? 'Video Enabled' : 'Video Disabled', state.videoEnabled ? 'Camera enabled' : 'Audio-only mode');
+            }
+        };
+
+        window.addContact = function() {
+            var nameInput = document.getElementById('newContactName');
+            var idInput = document.getElementById('newContactId');
+            if (!nameInput || !idInput) {
+                showNotification('Error', 'Contact input fields not found');
+                return;
+            }
+            var name = nameInput.value.trim();
+            var id = idInput.value.trim();
+            if (!name || !id) {
+                showNotification('Error', 'Please enter name and ID');
+                return;
+            }
+            var contacts = JSON.parse(localStorage.getItem('nevax_contacts') || '[]');
+            contacts.push({ id: id, name: name, status: 'offline' });
+            localStorage.setItem('nevax_contacts', JSON.stringify(contacts));
+            if (typeof loadContacts === 'function') loadContacts();
+            nameInput.value = '';
+            idInput.value = '';
+            showNotification('Contact Added', name + ' added to contacts');
+        };
+
+        window.testConnection = async function(e) {
+            if (e) e.stopPropagation();
+            console.log('🧪 Self-test starting...');
+            showNotification('Self-Test', 'Checking connection...');
+            if (typeof startCallWithChecks === 'function') {
+                await startCallWithChecks();
+            } else {
+                console.error('startCallWithChecks not available');
+                showNotification('Error', 'WebRTC not loaded properly');
+            }
+        };
+
+        console.log('✅ Inline functions loaded');
+    </script>
 </body>
 </html>
